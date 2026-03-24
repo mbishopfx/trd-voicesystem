@@ -1,0 +1,2 @@
+phone,first_name,last_name,company,email,timezone,opt_in,dnc,findings
++19085550155,Matt,Smoke,True Rank,matt-smoke@example.com,America/New_York,true,false,GO smoke test

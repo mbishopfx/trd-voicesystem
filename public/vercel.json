@@ -1,0 +1,21 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://outbound-voice-bot-production.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/webhooks/:path*",
+      "destination": "https://outbound-voice-bot-production.up.railway.app/webhooks/:path*"
+    },
+    {
+      "source": "/health",
+      "destination": "https://outbound-voice-bot-production.up.railway.app/health"
+    },
+    {
+      "source": "/dashboard",
+      "destination": "/"
+    }
+  ]
+}

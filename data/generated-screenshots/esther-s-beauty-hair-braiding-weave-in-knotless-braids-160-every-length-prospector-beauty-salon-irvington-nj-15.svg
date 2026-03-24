@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1440" height="1024" viewBox="0 0 1440 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1440" height="1024" fill="#F8FAFC"/>
+  <rect x="64" y="64" width="1312" height="896" rx="32" fill="#ffffff" stroke="#E2E8F0"/>
+  <rect x="64" y="64" width="1312" height="180" rx="32" fill="url(#g)"/>
+  <text x="120" y="180" fill="white" font-size="54" font-family="Arial" font-weight="700">Esther’s beauty hair braiding & weave-in Knotless braids 160 every length</text>
+  <text x="120" y="240" fill="#D1FAE5" font-size="28" font-family="Arial">Irvington, NJ • AI-generated homepage concept</text>
+  <rect x="120" y="320" width="360" height="220" rx="24" fill="#EEF2FF"/>
+  <rect x="520" y="320" width="360" height="220" rx="24" fill="#ECFCCB"/>
+  <rect x="920" y="320" width="360" height="220" rx="24" fill="#FCE7F3"/>
+  <rect x="120" y="590" width="1160" height="240" rx="24" fill="#F8FAFC" stroke="#E2E8F0"/>
+  <defs><linearGradient id="g" x1="64" y1="64" x2="1376" y2="244" gradientUnits="userSpaceOnUse"><stop stop-color="#0F172A"/><stop offset="1" stop-color="#7C3AED"/></linearGradient></defs>
+</svg>

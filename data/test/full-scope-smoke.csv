@@ -1,0 +1,5 @@
+phone,first_name,last_name,company,email,timezone,opt_in,dnc,findings,notes
++14176297373,Matt,Prospect,True Rank Digital,matt.test@truerankdigital.com,America/New_York,true,false,Warm lead from test list,Full-scope smoke test for dialing/logging/tagging
++17322156319,Jon,Prospect,True Rank Digital,jon.test@truerankdigital.com,America/New_York,true,false,Warm lead from test list,Full-scope smoke test for dialing/logging/tagging
++19084163008,Jose,Prospect,True Rank Digital,jose.test@truerankdigital.com,America/New_York,true,false,Warm lead from test list,Full-scope smoke test for dialing/logging/tagging
++19089387273,Jesse,Prospect,True Rank Digital,jesse.test@truerankdigital.com,America/New_York,true,false,Warm lead from test list,Full-scope smoke test for dialing/logging/tagging

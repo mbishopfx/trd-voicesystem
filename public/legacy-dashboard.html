@@ -1,0 +1,2203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Agent Control Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap");
+      :root {
+        --ink: #d8edf8;
+        --muted: #9eb6c6;
+        --line: rgba(148, 184, 208, 0.24);
+        --panel: rgba(10, 30, 50, 0.56);
+        --panel-strong: rgba(11, 34, 56, 0.8);
+        --cta: #10b981;
+        --cta-alt: #22d3ee;
+        --warn: #f97316;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at 8% 8%, rgba(34, 211, 238, 0.26), transparent 36%),
+          radial-gradient(circle at 90% 0%, rgba(16, 185, 129, 0.2), transparent 35%),
+          radial-gradient(circle at 80% 100%, rgba(249, 115, 22, 0.14), transparent 32%),
+          linear-gradient(125deg, #041322 0%, #071c2f 52%, #06253c 100%);
+      }
+      .platform {
+        max-width: 1600px;
+        margin: 0 auto;
+        padding: 20px;
+        display: grid;
+        gap: 14px;
+        grid-template-columns: 250px minmax(0, 1fr);
+      }
+      .toolbar {
+        position: sticky;
+        top: 20px;
+        align-self: start;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        backdrop-filter: blur(12px);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.08),
+          0 26px 65px rgba(0, 0, 0, 0.35);
+        padding: 16px;
+      }
+      .toolbar-title { font-size: 15px; font-weight: 700; margin: 0; }
+      .toolbar-sub { color: var(--muted); font-size: 12px; margin: 4px 0 16px; }
+      .nav-btn {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--ink);
+        background: rgba(7, 23, 39, 0.72);
+        padding: 10px 12px;
+        font: inherit;
+        font-size: 13px;
+      }
+      .nav-btn:hover { border-color: rgba(34, 211, 238, 0.45); transform: translateY(-1px); }
+      .nav-stack { display: grid; gap: 8px; }
+      .main-window {
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        backdrop-filter: blur(14px);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.08),
+          0 36px 80px rgba(1, 9, 19, 0.5);
+        padding: 18px;
+      }
+      .wrap { max-width: 100%; margin: 0; padding: 0; }
+      .hero {
+        border-radius: 16px;
+        padding: 22px;
+        margin-bottom: 16px;
+        background:
+          radial-gradient(circle at 10% 15%, rgba(34, 211, 238, 0.28), transparent 35%),
+          linear-gradient(130deg, rgba(16, 185, 129, 0.35) 0%, rgba(6, 68, 110, 0.66) 58%, rgba(8, 41, 64, 0.84) 100%);
+        border: 1px solid rgba(34, 211, 238, 0.2);
+        position: relative;
+        overflow: hidden;
+      }
+      .hero::after {
+        content: "";
+        position: absolute;
+        width: 240px;
+        height: 240px;
+        border-radius: 999px;
+        right: -80px;
+        top: -90px;
+        background: radial-gradient(circle, rgba(16, 185, 129, 0.4), transparent 70%);
+        filter: blur(6px);
+      }
+      .hero h1 { margin: 0 0 8px; font-size: 29px; }
+      .hero p { margin: 0; color: #bfe7f7; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 14px; }
+      .card {
+        background: var(--panel-strong);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 16px 32px rgba(2, 10, 20, 0.35);
+      }
+      h2 { margin: 0 0 10px; font-size: 18px; letter-spacing: 0.01em; }
+      h3 { color: #b7d6ea; }
+      .sub { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+      label { display: block; font-size: 13px; color: #bdd1df; margin-top: 9px; }
+      input, select, textarea {
+        width: 100%;
+        margin-top: 6px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+        color: #e2f1fd;
+        background: rgba(7, 23, 37, 0.8);
+        font: inherit;
+      }
+      input:disabled { opacity: 0.7; }
+      textarea { min-height: 86px; resize: vertical; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+      button {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 600;
+        padding: 10px 14px;
+        color: #f3fdff;
+        font-family: inherit;
+      }
+      button.primary {
+        background: linear-gradient(135deg, var(--cta) 0%, #0f766e 100%);
+        box-shadow: 0 10px 24px rgba(16, 185, 129, 0.3);
+      }
+      button.secondary {
+        background: linear-gradient(130deg, rgba(56, 189, 248, 0.3), rgba(14, 116, 144, 0.35));
+        border-color: rgba(56, 189, 248, 0.45);
+      }
+      button.warn {
+        background: linear-gradient(130deg, rgba(249, 115, 22, 0.34), rgba(180, 83, 9, 0.38));
+        border-color: rgba(249, 115, 22, 0.45);
+      }
+      .status {
+        margin-top: 12px;
+        border-radius: 9px;
+        padding: 10px;
+        font-size: 13px;
+        background: rgba(11, 40, 65, 0.62);
+        border: 1px solid rgba(111, 176, 216, 0.32);
+      }
+      .success { background: rgba(8, 72, 54, 0.68); border-color: rgba(16, 185, 129, 0.6); }
+      .error { background: rgba(90, 23, 31, 0.72); border-color: rgba(248, 113, 113, 0.6); }
+      .wide { grid-column: 1 / -1; }
+      .checkbox-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+      .checkbox-row input { width: auto; margin: 0; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { border-bottom: 1px solid rgba(114, 151, 182, 0.3); padding: 8px 7px; text-align: left; }
+      th { color: #acd2eb; }
+      .mono { font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
+      .stack { display: grid; gap: 10px; }
+      pre {
+        margin: 0;
+        background: rgba(3, 15, 27, 0.92);
+        color: #b9e5ff;
+        border-radius: 10px;
+        border: 1px solid rgba(90, 152, 191, 0.28);
+        padding: 12px;
+        overflow: auto;
+        max-height: 360px;
+        font-size: 12px;
+      }
+      .section-anchor { scroll-margin-top: 24px; }
+      @media (max-width: 1100px) {
+        .platform { grid-template-columns: 1fr; }
+        .toolbar { position: static; }
+      }
+      @media (max-width: 860px) {
+        .row, .row3 { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body class="min-h-screen">
+    <div class="platform">
+      <aside class="toolbar">
+        <p class="toolbar-title">True Rank VoiceOps</p>
+        <p class="toolbar-sub">Outbound + inbound control plane</p>
+        <div class="nav-stack">
+          <button class="nav-btn" data-scroll-target="section-guide"><span data-lucide-react="ListChecks"></span>Quick Start</button>
+          <button class="nav-btn" data-scroll-target="section-connections"><span data-lucide-react="LayoutDashboard"></span>Connections</button>
+          <button class="nav-btn" data-scroll-target="section-script-vars"><span data-lucide-react="Braces"></span>Script Variables</button>
+          <button class="nav-btn" data-scroll-target="section-outbound"><span data-lucide-react="PhoneCall"></span>Outbound</button>
+          <button class="nav-btn" data-scroll-target="section-ghl-import"><span data-lucide-react="Download"></span>GHL Import</button>
+          <button class="nav-btn" data-scroll-target="section-inbound"><span data-lucide-react="PhoneIncoming"></span>Inbound Builder</button>
+          <button class="nav-btn" data-scroll-target="section-template"><span data-lucide-react="Bot"></span>Agent Control</button>
+          <button class="nav-btn" data-scroll-target="section-tools"><span data-lucide-react="Wrench"></span>Tools</button>
+          <button class="nav-btn" data-scroll-target="section-analytics"><span data-lucide-react="ChartNoAxesCombined"></span>Analytics</button>
+          <button class="nav-btn" data-scroll-target="section-leads"><span data-lucide-react="Database"></span>Leads</button>
+        </div>
+      </aside>
+
+      <main class="main-window">
+        <div class="wrap">
+      <section class="hero">
+        <h1>Outbound Voice Agent Builder</h1>
+        <p>Fine-tune advanced agent templates, guardrail rule sets, and conversion scripts before deploying in Vapi.</p>
+      </section>
+
+      <div class="grid">
+        <section class="card wide section-anchor" id="section-guide">
+          <h2><i class="ph ph-list-checks" style="margin-right:6px;"></i>Operator Quick Start</h2>
+          <p class="sub">Follow this flow each day to load leads, run calls, and validate results with logs + retarget buckets.</p>
+          <div class="row">
+            <div class="stack">
+              <h3 style="margin:0;font-size:15px;">Daily Runbook</h3>
+              <pre id="guideRunbook">1) Confirm Connections and Inbound/Outbound assistants are set.
+2) Open Script Variables and set campaign-specific variables.
+3) Optional: run GHL Smart List Import by filter ID to auto-build CSV + ingest.
+4) Upload your daily CSV and click "GO: Upload + Ingest Now" (duplicate phones are skipped by design).
+5) Watch Worker Logs (auto-refresh every 5s) for dialing/call status.
+6) Validate outcomes in Recent Leads, Analytics, and Retarget export.
+7) Confirm booked leads synced into GHL with transcript notes.</pre>
+            </div>
+            <div class="stack">
+              <h3 style="margin:0;font-size:15px;">Readiness Checklist</h3>
+              <pre id="guideChecklist">(refresh readiness to evaluate setup)</pre>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="secondary" id="guideRefresh">Refresh Readiness</button>
+          </div>
+          <div class="status" id="guideStatus">Guide ready.</div>
+        </section>
+
+        <section class="card section-anchor" id="section-script-vars">
+          <h2><i class="ph ph-brackets-curly" style="margin-right:6px;"></i>Script Variables</h2>
+          <p class="sub">Customize variables injected into your assistant script for manual tests and previews.</p>
+          <label>Variable Overrides (`key=value`, one per line)
+            <textarea id="scriptVariablesText" placeholder="companyTagline=AI Search Optimization & Dominance&#10;agentName=Jarvis&#10;primaryOffer=Free AI visibility audit"></textarea>
+          </label>
+          <div class="actions">
+            <button class="secondary" id="scriptPreviewVars">Preview Parsed Variables</button>
+            <button class="secondary" id="saveSettingsFromVars">Save Variable Preset</button>
+          </div>
+          <div class="status" id="scriptVarStatus">No variable preview yet.</div>
+          <pre id="scriptVarOutput">(parsed variable map)</pre>
+        </section>
+
+        <section class="card section-anchor" id="section-connections">
+          <h2><i class="ph ph-plugs" style="margin-right:6px;"></i>Connections</h2>
+          <p class="sub">Used for manual test calls and integration checks.</p>
+
+          <label>Vapi API Key
+            <input id="vapiApiKey" placeholder="sk_..." />
+          </label>
+          <label>Vapi Public Key
+            <input id="vapiPublicKey" placeholder="pk_..." />
+          </label>
+          <label>Vapi Base URL
+            <input id="vapiBaseUrl" value="https://api.vapi.ai" />
+          </label>
+          <label>Vapi Phone Number ID
+            <input id="phoneNumberId" placeholder="pn_..." />
+          </label>
+
+          <label>GoHighLevel API Key
+            <input id="ghlApiKey" placeholder="Bearer token" />
+          </label>
+          <label>GoHighLevel Location ID
+            <input id="ghlLocationId" placeholder="locationId" />
+          </label>
+
+          <div class="actions">
+            <button class="secondary" id="saveSettings">Save Local</button>
+            <button class="secondary" id="loadDefaults">Refresh Env Status</button>
+          </div>
+          <div class="status" id="requirementsStatus">No checks run yet.</div>
+        </section>
+
+        <section class="card section-anchor" id="section-outbound">
+          <h2><i class="ph ph-phone-call" style="margin-right:6px;"></i>Test Call</h2>
+          <p class="sub">Uses selected template and profile to place one outbound test call.</p>
+
+          <div class="row">
+            <label>To Number
+              <input id="toNumber" placeholder="+1..." />
+            </label>
+            <label>Voice Profile
+              <select id="voiceProfile">
+                <option value="">From Template</option>
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="row">
+            <label>First Name
+              <input id="firstName" placeholder="Alex" />
+            </label>
+            <label>Company
+              <input id="company" placeholder="Acme Inc" />
+            </label>
+          </div>
+
+          <label>Calendly URL
+            <input id="calendlyUrl" placeholder="https://calendly.com/..." />
+          </label>
+          <label>Google Calendar URL
+            <input id="googleCalendarUrl" placeholder="https://calendar.google.com/..." />
+          </label>
+
+          <div class="actions">
+            <button class="primary" id="testCall">Place Test Call</button>
+            <button class="secondary" id="refreshLeads">Refresh Leads</button>
+          </div>
+          <div class="status" id="callStatus">Ready.</div>
+        </section>
+
+        <section class="card wide">
+          <h2><i class="ph ph-upload-simple" style="margin-right:6px;"></i>CSV Ingest + Auto Dialer</h2>
+          <p class="sub">Upload daily CSV lead files here. They are saved to incoming queue and ingested immediately for auto dialing.</p>
+
+          <div class="row">
+            <label>CSV Files
+              <input id="csvUploadFiles" type="file" accept=".csv,text/csv" multiple />
+            </label>
+            <label>Dialer Runtime
+              <input id="dialerRuntimeHint" value="Use npm run dev for server + ingest scheduler + dialer" disabled />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="primary" id="csvUploadAndIngest">GO: Upload + Ingest Now</button>
+            <button class="secondary" id="ingestRunNow">Run Ingest (Existing Incoming)</button>
+            <button class="secondary" id="refreshDialerStatus">Refresh Dialer Status</button>
+            <button class="secondary" id="refreshWorkerLogs">Refresh Worker Logs</button>
+            <button class="warn" id="resetStuckDialing">Reset Stuck Dialing</button>
+          </div>
+          <div class="status" id="ingestStatus">No ingest action yet.</div>
+          <div class="status" id="runAlertStatus"><i id="runAlertIcon" class="ph ph-hourglass"></i> Run monitor is waiting for activity.</div>
+          <pre id="ingestOutput">(ingest and dialer status output)</pre>
+          <div class="status" id="workerLogStatus">Worker log stream idle.</div>
+          <pre id="workerLogOutput">(worker and webhook events appear here; auto-refresh every 5s)</pre>
+        </section>
+
+        <section class="card wide section-anchor" id="section-ghl-import">
+          <h2><i class="ph ph-funnel" style="margin-right:6px;"></i>GHL Smart List Import</h2>
+          <p class="sub">Enter a GoHighLevel Smart List filter ID to pull contacts, generate CSV, ingest immediately, and launch campaign queueing.</p>
+          <div class="row3">
+            <label>Smart List Filter ID
+              <input id="ghlSmartListFilterId" placeholder="smart-list-filter-id" />
+            </label>
+            <label>Page Limit
+              <input id="ghlImportPageLimit" type="number" min="10" max="200" value="100" />
+            </label>
+            <label>Max Pages
+              <input id="ghlImportMaxPages" type="number" min="1" max="50" value="10" />
+            </label>
+          </div>
+          <div class="actions">
+            <button class="primary" id="ghlImportAndIngest">Import Smart List -> CSV -> Ingest</button>
+          </div>
+          <div class="status" id="ghlImportStatus">Smart list import not started.</div>
+          <pre id="ghlImportOutput">(import + ingest output)</pre>
+        </section>
+
+        <section class="card wide">
+          <h2><i class="ph ph-calendar-check" style="margin-right:6px;"></i>Booking Validation</h2>
+          <p class="sub">Validate booking pipeline for booked lead tagging + CRM sync. Calendly is recommended for first test.</p>
+
+          <div class="row3">
+            <label>Lead ID (preferred)
+              <input id="bookingLeadId" placeholder="lead id from Recent Leads table" />
+            </label>
+            <label>Phone (fallback match)
+              <input id="bookingPhone" placeholder="+1..." />
+            </label>
+            <label>Email (fallback match)
+              <input id="bookingEmail" placeholder="name@company.com" />
+            </label>
+          </div>
+
+          <div class="row">
+            <label>Booking Provider
+              <select id="bookingProviderTest">
+                <option value="calendly">Calendly (Recommended)</option>
+                <option value="google">Google Calendar</option>
+              </select>
+            </label>
+            <label>Validation Mode
+              <input value="Marks lead as booked and triggers CRM sync for test" disabled />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="primary" id="runBookingTest">Run Booking Test</button>
+          </div>
+          <div class="status" id="bookingTestStatus">Booking test not run yet.</div>
+          <pre id="bookingTestOutput">(booking test output)</pre>
+        </section>
+
+        <section class="card wide section-anchor" id="section-inbound">
+          <h2><i class="ph ph-phone-incoming" style="margin-right:6px;"></i>Inbound Agent Builder</h2>
+          <p class="sub">Configure inbound call behavior, wire a phone number, and track implementation phases before turning inbound live.</p>
+
+          <div class="row3">
+            <label>Inbound Assistant ID
+              <input id="inboundAssistantId" placeholder="asst_..." />
+            </label>
+            <label>Inbound Phone Number ID
+              <input id="inboundPhoneNumberId" placeholder="pn_..." />
+            </label>
+            <label>Voice Profile
+              <select id="inboundVoiceProfile">
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="row3">
+            <label>Booking Provider
+              <select id="inboundBookingProvider">
+                <option value="calendly">Calendly</option>
+                <option value="google-calendar">Google Calendar</option>
+                <option value="none">None</option>
+              </select>
+            </label>
+            <label>Booking URL
+              <input id="inboundBookingUrl" placeholder="https://calendly.com/..." />
+            </label>
+            <label>Max Call Seconds
+              <input id="inboundMaxCallSeconds" type="number" min="30" max="300" value="120" />
+            </label>
+          </div>
+
+          <div class="row">
+            <label>Brand Name
+              <input id="inboundBrandName" placeholder="True Rank Digital" />
+            </label>
+            <label>Inbound Objective
+              <input id="inboundObjective" placeholder="Qualify and book inbound leads" />
+            </label>
+          </div>
+
+          <div class="checkbox-grid">
+            <label class="checkbox-row"><input id="inboundWaitForUser" type="checkbox" checked />Wait for caller to speak first</label>
+            <label class="checkbox-row"><input id="inboundEnabled" type="checkbox" />Enable inbound profile</label>
+          </div>
+
+          <div class="actions">
+            <button class="secondary" id="inboundLoad">Reload Inbound Profile</button>
+            <button class="primary" id="inboundSave">Save Inbound Profile</button>
+            <button class="primary" id="inboundAttachPhone">Attach Assistant To Number</button>
+            <button class="secondary" id="inboundListPhoneNumbers">List Vapi Phone Numbers</button>
+          </div>
+
+          <div class="status" id="inboundStatus">Inbound profile not loaded.</div>
+          <div class="row" style="margin-top:12px;">
+            <div class="stack">
+              <h3 style="margin:0;font-size:15px;">Inbound Phases</h3>
+              <pre id="inboundPhasesOutput">(phase rollout status)</pre>
+            </div>
+            <div class="stack">
+              <h3 style="margin:0;font-size:15px;">Inbound API Output</h3>
+              <pre id="inboundOutput">(profile/attach responses)</pre>
+            </div>
+          </div>
+          <pre style="margin-top:10px;" id="inboundPhoneOutput">(vapi phone number list)</pre>
+        </section>
+
+        <section class="card wide section-anchor" id="section-template">
+          <h2><i class="ph ph-robot" style="margin-right:6px;"></i>Primary Agent Control</h2>
+          <p class="sub">Manage your active agent template first. Additional agent provisioning is secondary below.</p>
+
+          <div class="row3">
+            <label>Template
+              <select id="templateSelect"></select>
+            </label>
+            <label>Name
+              <input id="tplName" placeholder="Warm Lead Professional" />
+            </label>
+            <label>Voice Profile
+              <select id="tplVoiceProfile">
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+                <option value="neutral">Neutral</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="row">
+            <label>Description
+              <input id="tplDescription" placeholder="Template description" />
+            </label>
+            <label>Industry
+              <input id="tplIndustry" placeholder="B2B Services" />
+            </label>
+          </div>
+
+          <div class="row">
+            <label>Persona
+              <input id="tplPersona" placeholder="Senior outbound specialist" />
+            </label>
+            <label>Objective
+              <input id="tplObjective" placeholder="Book free discovery call" />
+            </label>
+          </div>
+
+          <label>Offer Summary
+            <input id="tplOfferSummary" placeholder="Short value proposition" />
+          </label>
+
+          <label>Opening Script
+            <textarea id="tplOpeningScript"></textarea>
+          </label>
+
+          <div class="row">
+            <label>Qualification Questions (one per line)
+              <textarea id="tplQualificationQuestions"></textarea>
+            </label>
+            <label>Value Points (one per line)
+              <textarea id="tplValuePoints"></textarea>
+            </label>
+          </div>
+
+          <label>Knowledge Base (facts, positioning, proof points; one per line)
+            <textarea id="tplKnowledgeBase"></textarea>
+          </label>
+
+          <div class="row">
+            <label>Allowed Topics (one per line)
+              <textarea id="tplAllowedTopics"></textarea>
+            </label>
+            <label>Forbidden Topics (one per line)
+              <textarea id="tplForbiddenTopics"></textarea>
+            </label>
+          </div>
+
+          <div class="row">
+            <label>Rebuttals (`objection => response`, one per line)
+              <textarea id="tplRebuttals"></textarea>
+            </label>
+            <label>Compliance Rules (one per line)
+              <textarea id="tplCompliance"></textarea>
+            </label>
+          </div>
+
+          <div class="row">
+            <label>CTA
+              <input id="tplCta" placeholder="Offer a free meeting with two time options" />
+            </label>
+            <label>Fallback if no booking
+              <input id="tplFollowUpFallback" placeholder="Collect follow-up channel and time" />
+            </label>
+          </div>
+
+          <div class="row3">
+            <label>Max Call Seconds
+              <input id="ruleMaxCallSeconds" type="number" value="120" min="30" max="120" />
+            </label>
+            <label>Max Turns
+              <input id="ruleMaxTurns" type="number" value="18" min="6" max="30" />
+            </label>
+            <label>Custom Tools (one per line)
+              <textarea id="toolCustom" style="min-height:70px"></textarea>
+            </label>
+          </div>
+
+          <div class="checkbox-grid" id="rulePackContainer"></div>
+
+          <div class="checkbox-grid">
+            <label class="checkbox-row"><input id="rulePromptInjectionShield" type="checkbox" checked />Prompt Injection Shield</label>
+            <label class="checkbox-row"><input id="ruleStrictTopicBoundary" type="checkbox" checked />Strict Topic Boundary</label>
+            <label class="checkbox-row"><input id="ruleRedirectOffTopic" type="checkbox" checked />Redirect Off Topic</label>
+            <label class="checkbox-row"><input id="ruleRequireIdentityCheck" type="checkbox" checked />Require Identity Check</label>
+            <label class="checkbox-row"><input id="ruleRequireMeetingCta" type="checkbox" checked />Require Meeting CTA</label>
+            <label class="checkbox-row"><input id="ruleDisallowGuarantees" type="checkbox" checked />Disallow Guarantees</label>
+            <label class="checkbox-row"><input id="ruleDisallowNegotiation" type="checkbox" checked />Disallow Negotiation</label>
+            <label class="checkbox-row"><input id="toolSendSms" type="checkbox" />Tool: Send SMS</label>
+            <label class="checkbox-row"><input id="toolTransferToHuman" type="checkbox" />Tool: Transfer to Human</label>
+            <label class="checkbox-row"><input id="toolEndCall" type="checkbox" checked />Tool: End Call</label>
+            <label class="checkbox-row"><input id="toolBookMeetingWebhook" type="checkbox" checked />Tool: Book Meeting Webhook</label>
+            <label class="checkbox-row"><input id="toolCreateCrmTask" type="checkbox" checked />Tool: CRM Task</label>
+          </div>
+
+          <div class="actions">
+            <button class="secondary" id="templateReload">Reload Templates</button>
+            <button class="primary" id="templateSave">Save Template</button>
+            <button class="secondary" id="templateActivate">Set Active</button>
+            <button class="secondary" id="templateCompile">Compile Prompt</button>
+            <button class="secondary" id="templatePreview">Preview Unsaved</button>
+            <button class="secondary" id="templateVapiDraft">Get Vapi Draft</button>
+            <button class="secondary" id="templateListVapi">List Vapi Assistants</button>
+          </div>
+
+          <div class="status" id="templateStatus">Template studio ready.</div>
+
+          <details style="margin-top:12px;">
+            <summary style="cursor:pointer;font-weight:600;">Secondary: Create Additional Agent + Assign Number</summary>
+            <p class="sub" style="margin-top:8px;">Use this only when spinning up an extra agent. Number assignment is required at creation time.</p>
+            <div class="row3">
+              <label>Additional Agent Name (optional)
+                <input id="additionalAgentName" placeholder="True Rank - Variant B" />
+              </label>
+              <label>Twilio/Vapi Phone Number ID (required)
+                <input id="additionalPhoneNumberId" placeholder="pn_..." />
+              </label>
+              <label>Server URL Override (optional)
+                <input id="additionalServerUrl" placeholder="https://your-server.example.com" />
+              </label>
+            </div>
+            <div class="actions">
+              <button class="primary" id="createAdditionalAgent">Create Additional Agent + Attach Number</button>
+              <button class="secondary" id="templatePublishVapi">Legacy: Create Assistant Only</button>
+              <button class="secondary" id="templateCreate">Create Default Template</button>
+              <button class="warn" id="templateDelete">Delete</button>
+            </div>
+          </details>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="stack">
+              <h3 style="margin:0;font-size:15px;">Compiled Prompt</h3>
+              <pre id="compiledPrompt">(compile to view)</pre>
+            </div>
+            <div class="stack">
+              <h3 style="margin:0;font-size:15px;">Vapi Assistant Draft Payload</h3>
+              <pre id="vapiDraft">(generate to view)</pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="card wide section-anchor" id="section-tools">
+          <h2><i class="ph ph-toolbox" style="margin-right:6px;"></i>Tools Manager</h2>
+          <p class="sub">Create custom tools, manage existing Vapi tools, and attach toolIds to assistants.</p>
+
+          <div class="row3">
+            <label>Catalog Option
+              <select id="toolCatalogSelect"></select>
+            </label>
+            <label>Selected Tool ID
+              <input id="selectedToolId" placeholder="tool id for update/delete" />
+            </label>
+            <label>Assistant ID (attach tools)
+              <input id="attachAssistantId" placeholder="assistant id" />
+            </label>
+          </div>
+
+          <div class="row">
+            <label>Tool Name
+              <input id="toolName" placeholder="lookup_customer" />
+            </label>
+            <label>Tool Type
+              <input id="toolType" placeholder="function / code / transferCall ..." />
+            </label>
+          </div>
+
+          <label>Description
+            <input id="toolDescription" placeholder="Tool description" />
+          </label>
+          <label>Server URL (for function tools)
+            <input id="toolServerUrl" placeholder="https://your-server.example.com/vapi/tool" />
+          </label>
+
+          <div class="row">
+            <label>Parameters JSON
+              <textarea id="toolParametersJson" style="min-height:120px"></textarea>
+            </label>
+            <label>Environment Variables JSON
+              <textarea id="toolEnvJson" style="min-height:120px"></textarea>
+            </label>
+          </div>
+
+          <label>Code (for code tools)
+            <textarea id="toolCode" style="min-height:120px"></textarea>
+          </label>
+
+          <div class="row">
+            <label>Tool IDs To Attach (comma-separated)
+              <input id="attachToolIds" placeholder="id1,id2,id3" />
+            </label>
+            <label>Attach Mode
+              <select id="attachMode">
+                <option value="append">append</option>
+                <option value="replace">replace</option>
+                <option value="remove">remove</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="secondary" id="toolLoadCatalog">Reload Catalog</button>
+            <button class="secondary" id="toolList">List Vapi Tools</button>
+            <button class="primary" id="toolCreate">Create Tool</button>
+            <button class="secondary" id="toolUpdate">Update Tool</button>
+            <button class="warn" id="toolDelete">Delete Tool</button>
+            <button class="primary" id="toolAttach">Attach Tool IDs To Assistant</button>
+          </div>
+          <div class="status" id="toolsStatus">Tools manager ready.</div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="stack">
+              <h3 style="margin:0;font-size:15px;">API/Dashboard Guidance</h3>
+              <pre id="toolGuide">(select a catalog option)</pre>
+            </div>
+            <div class="stack">
+              <h3 style="margin:0;font-size:15px;">Tool API Output</h3>
+              <pre id="toolsOutput">(list/create/update/delete output)</pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="card wide section-anchor" id="section-analytics">
+          <h2><i class="ph ph-chart-line-up" style="margin-right:6px;"></i>Analytics</h2>
+          <p class="sub">Pipeline and conversion stats from dial attempts, outcomes, and bookings.</p>
+
+          <div class="row3">
+            <div class="status" id="metricLeads">Total Leads: 0</div>
+            <div class="status" id="metricAttempted">Attempted: 0</div>
+            <div class="status" id="metricBooked">Booked: 0</div>
+          </div>
+          <div class="row3" style="margin-top:8px;">
+            <div class="status" id="metricBookingRate">Booking Rate: 0%</div>
+            <div class="status" id="metricCompletionRate">Completion Rate: 0%</div>
+            <div class="status" id="metricFailureRate">Failure Rate: 0%</div>
+          </div>
+
+          <div class="row" style="margin-top:12px;">
+            <div class="stack">
+              <h3 style="margin:0;font-size:15px;">Outcomes</h3>
+              <pre id="analyticsOutcomes">(refresh to view)</pre>
+            </div>
+            <div class="stack">
+              <h3 style="margin:0;font-size:15px;">Daily Trend (14d)</h3>
+              <pre id="analyticsDaily">(refresh to view)</pre>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="secondary" id="refreshAnalytics">Refresh Analytics</button>
+          </div>
+        </section>
+
+        <section class="card wide section-anchor" id="section-leads">
+          <h2><i class="ph ph-users-three" style="margin-right:6px;"></i>Recent Leads</h2>
+          <p class="sub">Latest lead state including attempts and GHL sync.</p>
+          <div style="overflow-x:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Phone</th>
+                  <th>Status</th>
+                  <th>Outcome</th>
+                  <th>Retarget</th>
+                  <th>Attempts</th>
+                  <th>Booking</th>
+                  <th>GHL Contact</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="leadsTable"></tbody>
+            </table>
+          </div>
+          <div class="actions">
+            <button class="secondary" id="retargetExportLatest">Export Latest Retarget CSVs</button>
+            <button class="primary" id="retargetExportSnapshot">Export Snapshot + Latest</button>
+          </div>
+          <div class="status" id="retargetStatus">Retarget buckets not exported yet.</div>
+          <pre id="retargetOutput">(retarget export output)</pre>
+        </section>
+      </div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const localIds = [
+        "vapiApiKey", "vapiPublicKey", "vapiBaseUrl", "phoneNumberId", "ghlApiKey", "ghlLocationId",
+        "toNumber", "voiceProfile", "firstName", "company", "calendlyUrl", "googleCalendarUrl",
+        "attachAssistantId", "attachToolIds", "attachMode",
+        "bookingProviderTest", "bookingLeadId", "bookingPhone", "bookingEmail",
+        "inboundAssistantId", "inboundPhoneNumberId", "inboundBookingProvider", "inboundBookingUrl",
+        "inboundVoiceProfile", "inboundBrandName", "inboundObjective", "inboundMaxCallSeconds",
+        "scriptVariablesText", "additionalAgentName", "additionalPhoneNumberId", "additionalServerUrl",
+        "ghlSmartListFilterId", "ghlImportPageLimit", "ghlImportMaxPages"
+      ];
+
+      const state = {
+        templates: [],
+        activeTemplateId: "",
+        selectedTemplateId: "",
+        rulePacks: [],
+        toolCatalog: [],
+        vapiTools: [],
+        requirementFlags: {},
+        dialerStatusSnapshot: null,
+        leadsSnapshot: [],
+        runLastProgressTs: 0,
+        workerLogCursorTs: 0,
+        workerLogLines: []
+      };
+      let workerLogTimer = null;
+
+      function $(id) { return document.getElementById(id); }
+      function getValue(id) { return $(id).value || ""; }
+      function setValue(id, value) { $(id).value = value || ""; }
+      function getChecked(id) { return Boolean($(id).checked); }
+      function setChecked(id, value) { $(id).checked = Boolean(value); }
+
+      function setStatus(id, text, kind) {
+        const el = $(id);
+        el.textContent = text;
+        el.className = "status" + (kind ? ` ${kind}` : "");
+      }
+
+      function bindSidebarNav() {
+        const buttons = document.querySelectorAll("[data-scroll-target]");
+        buttons.forEach((button) => {
+          button.addEventListener("click", () => {
+            const targetId = button.getAttribute("data-scroll-target");
+            if (!targetId) return;
+            const target = document.getElementById(targetId);
+            if (!target) return;
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        });
+      }
+
+      async function renderLucideReactIcons() {
+        try {
+          const React = await import("https://esm.sh/react@18.3.1");
+          const ReactDom = await import("https://esm.sh/react-dom@18.3.1/client");
+          const Icons = await import("https://esm.sh/lucide-react@0.552.0");
+
+          const iconMap = {
+            ListChecks: Icons.ListChecks,
+            LayoutDashboard: Icons.LayoutDashboard,
+            Braces: Icons.Braces,
+            PhoneCall: Icons.PhoneCall,
+            Download: Icons.Download,
+            PhoneIncoming: Icons.PhoneIncoming,
+            Bot: Icons.Bot,
+            Wrench: Icons.Wrench,
+            ChartNoAxesCombined: Icons.ChartNoAxesCombined,
+            Database: Icons.Database
+          };
+
+          document.querySelectorAll("[data-lucide-react]").forEach((node) => {
+            const name = node.getAttribute("data-lucide-react") || "";
+            const Icon = iconMap[name];
+            if (!Icon) return;
+            const root = ReactDom.createRoot(node);
+            root.render(React.createElement(Icon, { size: 16, strokeWidth: 2.2 }));
+          });
+        } catch (error) {
+          console.error("[UI] Lucide React icon render failed", error);
+        }
+      }
+
+      function saveLocal() {
+        const payload = {};
+        localIds.forEach((id) => { payload[id] = getValue(id); });
+        payload.inboundWaitForUser = getChecked("inboundWaitForUser");
+        payload.inboundEnabled = getChecked("inboundEnabled");
+        localStorage.setItem("voiceDialerDashboard", JSON.stringify(payload));
+        setStatus("requirementsStatus", "Saved locally in browser storage.", "success");
+      }
+
+      function loadLocal() {
+        const raw = localStorage.getItem("voiceDialerDashboard");
+        if (!raw) return;
+        const payload = JSON.parse(raw);
+        localIds.forEach((id) => setValue(id, payload[id] || ""));
+        if (typeof payload.inboundWaitForUser === "boolean") {
+          setChecked("inboundWaitForUser", payload.inboundWaitForUser);
+        }
+        if (typeof payload.inboundEnabled === "boolean") {
+          setChecked("inboundEnabled", payload.inboundEnabled);
+        }
+      }
+
+      function listToText(arr) {
+        return (arr || []).join("\n");
+      }
+
+      function rebuttalsToText(list) {
+        return (list || []).map((r) => `${r.objection} => ${r.response}`).join("\n");
+      }
+
+      function textToRebuttals(text) {
+        return (text || "")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => {
+            const parts = line.split("=>");
+            if (parts.length < 2) return null;
+            return { objection: parts[0].trim(), response: parts.slice(1).join("=>").trim() };
+          })
+          .filter(Boolean);
+      }
+
+      function parseScriptVariablesText(raw) {
+        const lines = (raw || "").split("\n");
+        const map = {};
+        const errors = [];
+
+        lines.forEach((line, index) => {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) return;
+          const separator = trimmed.indexOf("=");
+          if (separator <= 0) {
+            errors.push(`line ${index + 1}: missing '='`);
+            return;
+          }
+          const key = trimmed.slice(0, separator).trim();
+          const value = trimmed.slice(separator + 1).trim();
+          if (!key) {
+            errors.push(`line ${index + 1}: empty key`);
+            return;
+          }
+          map[key] = value;
+        });
+
+        return { map, errors };
+      }
+
+      function previewScriptVariables() {
+        const parsed = parseScriptVariablesText(getValue("scriptVariablesText"));
+        $("scriptVarOutput").textContent = JSON.stringify(parsed.map, null, 2);
+        if (parsed.errors.length) {
+          setStatus("scriptVarStatus", `Variable parse warnings: ${parsed.errors.join(" | ")}`, "error");
+          return parsed;
+        }
+        setStatus("scriptVarStatus", `Loaded ${Object.keys(parsed.map).length} variable override(s).`, "success");
+        return parsed;
+      }
+
+      function resolveGuideReadiness() {
+        const flags = state.requirementFlags || {};
+        const hasApiKey = Boolean(getValue("vapiApiKey")) || Boolean(flags.hasEnvApiKey);
+        const hasPhoneId = Boolean(getValue("phoneNumberId")) || Boolean(flags.hasEnvPhoneNumberId);
+        const hasAssistant =
+          Boolean(flags.hasEnvAssistantId) || Boolean(flags.hasEnvFemaleAssistantId) || Boolean(flags.hasEnvMaleAssistantId);
+        const hasBooking = Boolean(getValue("calendlyUrl") || getValue("googleCalendarUrl")) || Boolean(flags.hasCalendlyBookingUrl) || Boolean(flags.hasGoogleBookingUrl);
+        const hasGhl = Boolean(flags.hasGhlConnection);
+        const parsedVars = parseScriptVariablesText(getValue("scriptVariablesText"));
+
+        const checks = [
+          { label: "Vapi API key configured", ok: hasApiKey },
+          { label: "Outbound phone number configured", ok: hasPhoneId },
+          { label: "Assistant configured (default or voice-specific)", ok: hasAssistant },
+          { label: "Booking URL configured", ok: hasBooking },
+          { label: "GoHighLevel connection available", ok: hasGhl },
+          { label: "Script variables parse cleanly", ok: parsedVars.errors.length === 0 },
+          { label: "Dialer runtime online", ok: $("ingestStatus").textContent.toLowerCase().includes("dialer") }
+        ];
+
+        const readyCount = checks.filter((c) => c.ok).length;
+        const lines = checks.map((c) => `${c.ok ? "OK" : "MISSING"} - ${c.label}`);
+        $("guideChecklist").textContent = lines.join("\n");
+        const statusKind = readyCount === checks.length ? "success" : readyCount >= checks.length - 1 ? "" : "error";
+        setStatus("guideStatus", `Readiness ${readyCount}/${checks.length}. ${readyCount === checks.length ? "Ready to run." : "Complete missing setup items."}`, statusKind);
+      }
+
+      async function loadRequirements() {
+        try {
+          const res = await fetch("/api/requirements");
+          const data = await res.json();
+          const flags = data.defaults || {};
+          state.requirementFlags = flags;
+          const text = `Env status: apiKey=${flags.hasEnvApiKey} publicKey=${flags.hasEnvPublicKey} vapiPhoneId=${flags.hasEnvPhoneNumberId} inboundAsst=${flags.hasEnvInboundAssistantId} twilioFallback=${flags.hasEnvTwilioAccountSid && flags.hasEnvTwilioAuthToken && flags.hasEnvTwilioPhoneNumber} winSms=${flags.canSendWinSms} female=${flags.hasEnvFemaleAssistantId} male=${flags.hasEnvMaleAssistantId} db=${flags.hasDatabaseState} templates=${flags.templateCount} active=${flags.activeTemplateId || "none"} toolCatalog=${flags.toolCatalogSize} ghl=${flags.hasGhlConnection} booking=${flags.bookingProvider || "calendly"} retargetAuto=${flags.retargetAutoExport} postCallDelay=${flags.postCallDelaySeconds || 0}s`;
+          setStatus("requirementsStatus", text, "");
+          if (flags.bookingProvider === "google") {
+            setValue("bookingProviderTest", "google");
+          } else {
+            setValue("bookingProviderTest", "calendly");
+          }
+          resolveGuideReadiness();
+        } catch (e) {
+          setStatus("requirementsStatus", String(e), "error");
+        }
+      }
+
+      function inboundProfileFromForm() {
+        return {
+          assistantId: getValue("inboundAssistantId"),
+          phoneNumberId: getValue("inboundPhoneNumberId"),
+          bookingProvider: getValue("inboundBookingProvider") || "none",
+          bookingUrl: getValue("inboundBookingUrl"),
+          voiceProfile: getValue("inboundVoiceProfile") || "female",
+          brandName: getValue("inboundBrandName"),
+          objective: getValue("inboundObjective"),
+          maxCallSeconds: Number(getValue("inboundMaxCallSeconds") || 120),
+          waitForUser: getChecked("inboundWaitForUser"),
+          enabled: getChecked("inboundEnabled")
+        };
+      }
+
+      function applyInboundProfile(profile) {
+        if (!profile) return;
+        setValue("inboundAssistantId", profile.assistantId || "");
+        setValue("inboundPhoneNumberId", profile.phoneNumberId || "");
+        setValue("inboundBookingProvider", profile.bookingProvider || "none");
+        setValue("inboundBookingUrl", profile.bookingUrl || "");
+        setValue("inboundVoiceProfile", profile.voiceProfile || "female");
+        setValue("inboundBrandName", profile.brandName || "");
+        setValue("inboundObjective", profile.objective || "");
+        setValue("inboundMaxCallSeconds", String(profile.maxCallSeconds || 120));
+        setChecked("inboundWaitForUser", profile.waitForUser !== false);
+        setChecked("inboundEnabled", Boolean(profile.enabled));
+      }
+
+      function renderInboundPhases(phases) {
+        const rows = (phases || []).map((phase) => {
+          const checks = (phase.checks || []).join(" | ");
+          return `${phase.name} [${phase.status}] - ${phase.description}\n  checks: ${checks}`;
+        });
+        $("inboundPhasesOutput").textContent = rows.join("\n\n") || "(no inbound phases yet)";
+      }
+
+      async function loadInboundProfile() {
+        const res = await fetch("/api/inbound/profile");
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Inbound profile load failed");
+        applyInboundProfile(data.profile);
+        renderInboundPhases(data.phases || []);
+        $("inboundOutput").textContent = JSON.stringify(data.profile || {}, null, 2);
+        setStatus("inboundStatus", "Inbound profile loaded.", "success");
+      }
+
+      async function saveInboundProfile() {
+        const res = await fetch("/api/inbound/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profile: inboundProfileFromForm() })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Inbound profile save failed");
+        applyInboundProfile(data.profile);
+        renderInboundPhases(data.phases || []);
+        $("inboundOutput").textContent = JSON.stringify(data, null, 2);
+        setStatus("inboundStatus", "Inbound profile saved.", "success");
+      }
+
+      async function attachInboundPhone() {
+        const payload = {
+          assistantId: getValue("inboundAssistantId"),
+          phoneNumberId: getValue("inboundPhoneNumberId"),
+          vapiApiKey: getValue("vapiApiKey"),
+          vapiBaseUrl: getValue("vapiBaseUrl")
+        };
+
+        const res = await fetch("/api/inbound/attach-phone", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || data.details || "Inbound phone attach failed");
+
+        applyInboundProfile(data.profile);
+        renderInboundPhases(data.phases || []);
+        $("inboundOutput").textContent = JSON.stringify(data, null, 2);
+        setStatus("inboundStatus", "Inbound number successfully attached to assistant.", "success");
+      }
+
+      async function listInboundPhoneNumbers() {
+        const query = new URLSearchParams();
+        if (getValue("vapiApiKey")) query.set("vapiApiKey", getValue("vapiApiKey"));
+        if (getValue("vapiBaseUrl")) query.set("vapiBaseUrl", getValue("vapiBaseUrl"));
+        const res = await fetch(`/api/vapi/phone-numbers?${query.toString()}`);
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || data.details || "Vapi phone number list failed");
+        $("inboundPhoneOutput").textContent = JSON.stringify(data.phoneNumbers || [], null, 2);
+        setStatus("inboundStatus", `Loaded ${(data.phoneNumbers || []).length} phone number(s).`, "success");
+      }
+
+      async function loadRulePacks() {
+        const res = await fetch("/api/rule-packs");
+        const data = await res.json();
+        state.rulePacks = data.rulePacks || [];
+
+        const container = $("rulePackContainer");
+        container.innerHTML = "";
+        state.rulePacks.forEach((pack) => {
+          const label = document.createElement("label");
+          label.className = "checkbox-row";
+          label.innerHTML = `<input type="checkbox" id="rulepack_${pack.id}" />${pack.name}`;
+          container.appendChild(label);
+        });
+      }
+
+      function renderTemplateSelect() {
+        const select = $("templateSelect");
+        select.innerHTML = "";
+        state.templates.forEach((tpl) => {
+          const opt = document.createElement("option");
+          opt.value = tpl.id;
+          opt.textContent = tpl.name + (tpl.id === state.activeTemplateId ? " (active)" : "");
+          select.appendChild(opt);
+        });
+
+        if (!state.selectedTemplateId && state.templates.length) {
+          state.selectedTemplateId = state.activeTemplateId || state.templates[0].id;
+        }
+
+        select.value = state.selectedTemplateId || "";
+      }
+
+      function templateFromForm() {
+        const selectedId = state.selectedTemplateId;
+        return {
+          id: selectedId,
+          name: getValue("tplName"),
+          description: getValue("tplDescription"),
+          voiceProfile: getValue("tplVoiceProfile"),
+          industry: getValue("tplIndustry"),
+          persona: getValue("tplPersona"),
+          objective: getValue("tplObjective"),
+          offerSummary: getValue("tplOfferSummary"),
+          openingScript: getValue("tplOpeningScript"),
+          qualificationQuestions: getValue("tplQualificationQuestions"),
+          valuePoints: getValue("tplValuePoints"),
+          knowledgeBase: getValue("tplKnowledgeBase"),
+          allowedTopics: getValue("tplAllowedTopics"),
+          forbiddenTopics: getValue("tplForbiddenTopics"),
+          cta: getValue("tplCta"),
+          followUpFallback: getValue("tplFollowUpFallback"),
+          rebuttals: textToRebuttals(getValue("tplRebuttals")),
+          compliance: getValue("tplCompliance"),
+          rulePacks: state.rulePacks.filter((pack) => getChecked(`rulepack_${pack.id}`)).map((pack) => pack.id),
+          rules: {
+            maxCallSeconds: Number(getValue("ruleMaxCallSeconds") || 120),
+            maxTurns: Number(getValue("ruleMaxTurns") || 18),
+            promptInjectionShield: getChecked("rulePromptInjectionShield"),
+            strictTopicBoundary: getChecked("ruleStrictTopicBoundary"),
+            redirectOffTopic: getChecked("ruleRedirectOffTopic"),
+            requireIdentityCheck: getChecked("ruleRequireIdentityCheck"),
+            requireMeetingCta: getChecked("ruleRequireMeetingCta"),
+            disallowGuarantees: getChecked("ruleDisallowGuarantees"),
+            disallowNegotiation: getChecked("ruleDisallowNegotiation")
+          },
+          tools: {
+            sendSms: getChecked("toolSendSms"),
+            transferToHuman: getChecked("toolTransferToHuman"),
+            endCall: getChecked("toolEndCall"),
+            bookMeetingWebhook: getChecked("toolBookMeetingWebhook"),
+            createCrmTask: getChecked("toolCreateCrmTask"),
+            customTools: getValue("toolCustom")
+          }
+        };
+      }
+
+      function formFromTemplate(tpl) {
+        setValue("tplName", tpl.name);
+        setValue("tplDescription", tpl.description);
+        setValue("tplVoiceProfile", tpl.voiceProfile || "female");
+        setValue("tplIndustry", tpl.industry);
+        setValue("tplPersona", tpl.persona);
+        setValue("tplObjective", tpl.objective);
+        setValue("tplOfferSummary", tpl.offerSummary);
+        setValue("tplOpeningScript", tpl.openingScript);
+        setValue("tplQualificationQuestions", listToText(tpl.qualificationQuestions));
+        setValue("tplValuePoints", listToText(tpl.valuePoints));
+        setValue("tplKnowledgeBase", listToText(tpl.knowledgeBase));
+        setValue("tplAllowedTopics", listToText(tpl.allowedTopics));
+        setValue("tplForbiddenTopics", listToText(tpl.forbiddenTopics));
+        setValue("tplCta", tpl.cta);
+        setValue("tplFollowUpFallback", tpl.followUpFallback);
+        setValue("tplRebuttals", rebuttalsToText(tpl.rebuttals));
+        setValue("tplCompliance", listToText(tpl.compliance));
+
+        setValue("ruleMaxCallSeconds", String((tpl.rules || {}).maxCallSeconds || 120));
+        setValue("ruleMaxTurns", String((tpl.rules || {}).maxTurns || 18));
+        setChecked("rulePromptInjectionShield", (tpl.rules || {}).promptInjectionShield !== false);
+        setChecked("ruleStrictTopicBoundary", (tpl.rules || {}).strictTopicBoundary !== false);
+        setChecked("ruleRedirectOffTopic", (tpl.rules || {}).redirectOffTopic !== false);
+        setChecked("ruleRequireIdentityCheck", (tpl.rules || {}).requireIdentityCheck !== false);
+        setChecked("ruleRequireMeetingCta", (tpl.rules || {}).requireMeetingCta !== false);
+        setChecked("ruleDisallowGuarantees", (tpl.rules || {}).disallowGuarantees !== false);
+        setChecked("ruleDisallowNegotiation", (tpl.rules || {}).disallowNegotiation !== false);
+
+        setChecked("toolSendSms", Boolean((tpl.tools || {}).sendSms));
+        setChecked("toolTransferToHuman", Boolean((tpl.tools || {}).transferToHuman));
+        setChecked("toolEndCall", (tpl.tools || {}).endCall !== false);
+        setChecked("toolBookMeetingWebhook", (tpl.tools || {}).bookMeetingWebhook !== false);
+        setChecked("toolCreateCrmTask", (tpl.tools || {}).createCrmTask !== false);
+        setValue("toolCustom", listToText((tpl.tools || {}).customTools || []));
+
+        state.rulePacks.forEach((pack) => {
+          setChecked(`rulepack_${pack.id}`, (tpl.rulePacks || []).includes(pack.id));
+        });
+      }
+
+      async function loadTemplates() {
+        const res = await fetch("/api/templates");
+        const data = await res.json();
+        state.templates = data.templates || [];
+        state.activeTemplateId = data.activeTemplateId || "";
+
+        if (!state.selectedTemplateId && state.templates.length) {
+          state.selectedTemplateId = state.activeTemplateId || state.templates[0].id;
+        }
+
+        const stillExists = state.templates.some((tpl) => tpl.id === state.selectedTemplateId);
+        if (!stillExists && state.templates.length) {
+          state.selectedTemplateId = state.templates[0].id;
+        }
+
+        renderTemplateSelect();
+
+        const selected = state.templates.find((tpl) => tpl.id === state.selectedTemplateId);
+        if (selected) formFromTemplate(selected);
+      }
+
+      async function createTemplate() {
+        const res = await fetch("/api/templates/create-default", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "New Professional Template" })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Template create failed");
+        state.selectedTemplateId = data.template.id;
+        await loadTemplates();
+        setStatus("templateStatus", `Created template ${data.template.name}`, "success");
+      }
+
+      async function saveTemplate() {
+        const payload = { template: templateFromForm() };
+        const res = await fetch("/api/templates/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Template save failed");
+
+        state.selectedTemplateId = data.template.id;
+        await loadTemplates();
+        setStatus("templateStatus", `Saved template ${data.template.name}`, "success");
+      }
+
+      async function activateTemplate() {
+        if (!state.selectedTemplateId) return;
+        const res = await fetch(`/api/templates/${state.selectedTemplateId}/activate`, { method: "POST" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Template activate failed");
+
+        state.activeTemplateId = data.activeTemplateId;
+        await loadTemplates();
+        setStatus("templateStatus", `Activated template ${data.activeTemplateId}`, "success");
+      }
+
+      async function deleteTemplate() {
+        if (!state.selectedTemplateId) return;
+        const res = await fetch(`/api/templates/${state.selectedTemplateId}`, { method: "DELETE" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Template delete failed");
+
+        state.selectedTemplateId = data.activeTemplateId;
+        await loadTemplates();
+        setStatus("templateStatus", "Template deleted", "success");
+      }
+
+      async function compileTemplate() {
+        if (!state.selectedTemplateId) return;
+        const res = await fetch(`/api/templates/${state.selectedTemplateId}/compile`);
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Compile failed");
+
+        $("compiledPrompt").textContent = data.compiled.prompt;
+        const warnings = (data.compiled.quality.warnings || []).join(" | ") || "none";
+        setStatus(
+          "templateStatus",
+          `Compiled. quality=${data.compiled.quality.score}/100 warnings=${warnings}`,
+          data.compiled.quality.warnings.length ? "error" : "success"
+        );
+      }
+
+      async function previewTemplate() {
+        const res = await fetch("/api/templates/compile-preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ template: templateFromForm() })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Preview failed");
+
+        $("compiledPrompt").textContent = data.compiled.prompt;
+        $("vapiDraft").textContent = JSON.stringify(data.draft, null, 2);
+        const warnings = (data.compiled.quality.warnings || []).join(" | ") || "none";
+        setStatus(
+          "templateStatus",
+          `Preview quality=${data.compiled.quality.score}/100 warnings=${warnings}`,
+          data.compiled.quality.warnings.length ? "error" : "success"
+        );
+      }
+
+      async function loadVapiDraft() {
+        if (!state.selectedTemplateId) return;
+        const res = await fetch(`/api/templates/${state.selectedTemplateId}/vapi-draft`);
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Draft generation failed");
+        $("vapiDraft").textContent = JSON.stringify(data.draft, null, 2);
+        setStatus("templateStatus", "Generated Vapi assistant draft payload", "success");
+      }
+
+      async function publishTemplateToVapi() {
+        const toolIds = (getValue("attachToolIds") || "")
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean);
+
+        const payload = {
+          templateId: state.selectedTemplateId || state.activeTemplateId,
+          vapiApiKey: getValue("vapiApiKey"),
+          vapiBaseUrl: getValue("vapiBaseUrl"),
+          toolIds
+        };
+
+        const res = await fetch("/api/vapi/create-assistant-from-template", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Vapi publish failed");
+
+        setStatus(
+          "templateStatus",
+          `Published to Vapi. assistantId=${data.assistantId} template=${data.templateName}`,
+          "success"
+        );
+      }
+
+      async function createAdditionalAgent() {
+        const phoneNumberId = getValue("additionalPhoneNumberId").trim();
+        if (!phoneNumberId) {
+          throw new Error("Twilio/Vapi phone number ID is required for additional agent creation");
+        }
+
+        const toolIds = (getValue("attachToolIds") || "")
+          .split(",")
+          .map((id) => id.trim())
+          .filter(Boolean);
+
+        const payload = {
+          templateId: state.selectedTemplateId || state.activeTemplateId,
+          phoneNumberId,
+          assistantName: getValue("additionalAgentName") || undefined,
+          vapiApiKey: getValue("vapiApiKey"),
+          vapiBaseUrl: getValue("vapiBaseUrl"),
+          serverUrl: getValue("additionalServerUrl") || undefined,
+          toolIds
+        };
+
+        const res = await fetch("/api/vapi/create-additional-agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || data.details || "Additional agent creation failed");
+
+        $("vapiDraft").textContent = JSON.stringify(data, null, 2);
+        setStatus(
+          "templateStatus",
+          `Additional agent ready. assistantId=${data.assistantId} attachedNumber=${data.phoneNumberId}`,
+          "success"
+        );
+      }
+
+      async function importGhlSmartListAndIngest() {
+        const filterId = getValue("ghlSmartListFilterId").trim();
+        if (!filterId) throw new Error("Smart List Filter ID is required");
+
+        setStatus("ghlImportStatus", "Importing contacts from GHL smart list...", "");
+        const payload = {
+          filterId,
+          pageLimit: Number(getValue("ghlImportPageLimit") || 100),
+          maxPages: Number(getValue("ghlImportMaxPages") || 10),
+          runIngest: true
+        };
+
+        const res = await fetch("/api/ghl/import-smart-list", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "GHL smart list import failed");
+
+        $("ghlImportOutput").textContent = JSON.stringify(data, null, 2);
+        setStatus(
+          "ghlImportStatus",
+          `Imported ${data.contactsWithPhone || 0} contacts from filter ${data.filterId}. Ingested into dialer queue.`,
+          "success"
+        );
+
+        await loadDialerStatus();
+        await loadLeads();
+        await loadAnalytics();
+        await loadWorkerLogs(false);
+      }
+
+      async function listVapiAssistants() {
+        const query = new URLSearchParams();
+        if (getValue("vapiApiKey")) query.set("vapiApiKey", getValue("vapiApiKey"));
+        if (getValue("vapiBaseUrl")) query.set("vapiBaseUrl", getValue("vapiBaseUrl"));
+        const res = await fetch(`/api/vapi/assistants?${query.toString()}`);
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "List assistants failed");
+
+        $("vapiDraft").textContent = JSON.stringify(data.assistants || [], null, 2);
+        setStatus("templateStatus", `Fetched ${data.assistants.length || 0} assistants from Vapi`, "success");
+      }
+
+      async function loadAnalytics() {
+        const res = await fetch("/api/analytics/summary");
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Analytics load failed");
+
+        const summary = data.summary || {};
+        const totals = summary.totals || {};
+        const rates = summary.rates || {};
+
+        $("metricLeads").textContent = `Total Leads: ${totals.leads || 0}`;
+        $("metricAttempted").textContent = `Attempted: ${totals.attempted || 0}`;
+        $("metricBooked").textContent = `Booked: ${totals.booked || 0}`;
+        $("metricBookingRate").textContent = `Booking Rate: ${rates.bookingRate || 0}%`;
+        $("metricCompletionRate").textContent = `Completion Rate: ${rates.completionRate || 0}%`;
+        $("metricFailureRate").textContent = `Failure Rate: ${rates.failureRate || 0}%`;
+
+        const outcomes = (summary.byOutcome || []).map((row) => `${row.outcome}: ${row.count}`).join("\n");
+        const daily = (summary.daily || [])
+          .map((row) => `${row.day} | attempted=${row.attempted} completed=${row.completed} booked=${row.booked}`)
+          .join("\n");
+
+        $("analyticsOutcomes").textContent = outcomes || "(no outcomes yet)";
+        $("analyticsDaily").textContent = daily || "(no daily trend yet)";
+      }
+
+      function readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+          reader.onerror = () => reject(new Error(`Could not read file ${file.name}`));
+          reader.readAsText(file);
+        });
+      }
+
+      async function loadDialerStatus() {
+        const res = await fetch("/api/dialer/status");
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Dialer status load failed");
+        state.dialerStatusSnapshot = data;
+
+        const runtime = data.runtime || {};
+        const queue = data.queue || {};
+        const byStatus = queue.byStatus || {};
+        const isActive = runtime.dialerActive ? "active" : "not-active";
+
+        setStatus(
+          "ingestStatus",
+          `Dialer ${isActive}. dueNow=${queue.dueNow || 0} queued=${byStatus.queued || 0} retry=${byStatus.retry || 0} dialing=${byStatus.dialing || 0}`,
+          runtime.dialerActive ? "success" : "error"
+        );
+        $("ingestOutput").textContent = JSON.stringify(data, null, 2);
+        resolveGuideReadiness();
+        updateRunAlert();
+      }
+
+      function renderWorkerLogs() {
+        const text = state.workerLogLines.join("\n");
+        $("workerLogOutput").textContent = text || "(no worker logs yet)";
+      }
+
+      function formatWorkerLogLine(row) {
+        const scope = (row.scope || "worker").toUpperCase();
+        const level = (row.level || "info").toUpperCase();
+        return `${row.at} [${scope}/${level}] ${row.message || ""}`;
+      }
+
+      async function loadWorkerLogs(forceFull) {
+        const params = new URLSearchParams();
+        params.set("limit", forceFull ? "120" : "200");
+        if (!forceFull && state.workerLogCursorTs > 0) {
+          params.set("afterTs", String(state.workerLogCursorTs));
+        }
+
+        const res = await fetch(`/api/logs/worker?${params.toString()}`);
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Worker logs load failed");
+
+        const rows = data.logs || [];
+        if (forceFull) {
+          state.workerLogLines = rows.map(formatWorkerLogLine);
+        } else if (rows.length > 0) {
+          state.workerLogLines.push(...rows.map(formatWorkerLogLine));
+        }
+
+        const progression = rows.filter((row) => row && row.scope && row.scope !== "server");
+        if (progression.length > 0) {
+          state.runLastProgressTs = progression[progression.length - 1].ts || state.runLastProgressTs;
+        }
+        if (forceFull && state.runLastProgressTs === 0) {
+          const historical = rows.filter((row) => row && row.scope && row.scope !== "server");
+          if (historical.length > 0) {
+            state.runLastProgressTs = historical[historical.length - 1].ts || 0;
+          }
+        }
+
+        if (state.workerLogLines.length > 300) {
+          state.workerLogLines = state.workerLogLines.slice(state.workerLogLines.length - 300);
+        }
+
+        state.workerLogCursorTs = data.latestTs || state.workerLogCursorTs;
+        renderWorkerLogs();
+        setStatus(
+          "workerLogStatus",
+          `Worker logs streaming every 5s. latestTs=${state.workerLogCursorTs} newEntries=${rows.length}`,
+          rows.length > 0 ? "success" : ""
+        );
+        updateRunAlert();
+      }
+
+      function startWorkerLogStream() {
+        if (workerLogTimer) return;
+        workerLogTimer = setInterval(() => {
+          loadWorkerLogs(false).catch((e) => setStatus("workerLogStatus", String(e), "error"));
+        }, 5000);
+      }
+
+      function setRunAlert(iconClass, text, kind) {
+        const el = $("runAlertStatus");
+        el.className = "status" + (kind ? ` ${kind}` : "");
+        el.innerHTML = `<i class="${iconClass}" style="margin-right:6px;"></i>${text}`;
+      }
+
+      function updateRunAlert() {
+        const dialer = state.dialerStatusSnapshot || {};
+        const queue = dialer.queue || {};
+        const byStatus = queue.byStatus || {};
+        const total = queue.totalLeads || 0;
+        const active = (byStatus.queued || 0) + (byStatus.retry || 0) + (byStatus.dialing || 0);
+        const now = Date.now();
+        const staleMs = state.runLastProgressTs > 0 ? now - state.runLastProgressTs : 0;
+
+        if (active === 0 && total > 0) {
+          setRunAlert("ph ph-check-circle", "Run appears complete. No active queued/retry/dialing leads remain.", "success");
+          return;
+        }
+
+        if (active > 0 && state.runLastProgressTs > 0 && staleMs > 90_000) {
+          setRunAlert(
+            "ph ph-warning-circle",
+            `No progression detected for ${Math.floor(staleMs / 1000)}s while ${active} lead(s) are active. Consider Reset Stuck Dialing.`,
+            "error"
+          );
+          return;
+        }
+
+        if (active > 0) {
+          setRunAlert(
+            "ph ph-spinner-gap",
+            `Run in progress. active=${active} queued=${byStatus.queued || 0} retry=${byStatus.retry || 0} dialing=${byStatus.dialing || 0}`,
+            ""
+          );
+          return;
+        }
+
+        setRunAlert("ph ph-hourglass", "Run monitor is waiting for activity.", "");
+      }
+
+      async function resetStuckDialingLeads() {
+        const res = await fetch("/api/dialer/reset-stuck", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ thresholdSeconds: 180 })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Reset stuck dialing failed");
+
+        $("ingestOutput").textContent = JSON.stringify(data, null, 2);
+        const result = data.result || {};
+        setStatus(
+          "ingestStatus",
+          `Reset stuck dialing done. checked=${result.checked || 0} reset=${result.reset || 0} failed=${result.failed || 0}`,
+          "success"
+        );
+        await loadDialerStatus();
+        await loadWorkerLogs(false);
+        await loadLeads();
+        updateRunAlert();
+      }
+
+      async function uploadCsvAndIngest() {
+        const input = $("csvUploadFiles");
+        const files = Array.from((input && input.files) ? input.files : []);
+        if (!files.length) throw new Error("Select at least one CSV file");
+
+        setStatus("ingestStatus", `Reading ${files.length} CSV file(s)...`, "");
+
+        const payloadFiles = [];
+        for (const file of files) {
+          const csvContent = await readFileAsText(file);
+          payloadFiles.push({ fileName: file.name, csvContent });
+        }
+
+        const res = await fetch("/api/ingest/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            files: payloadFiles,
+            runIngest: true
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "CSV upload/ingest failed");
+
+        $("ingestOutput").textContent = JSON.stringify(data, null, 2);
+        const count = (data.uploaded || []).length;
+        const summaries = data.ingest?.summaries || [];
+        const accepted = summaries.reduce((sum, row) => sum + (row.accepted || 0), 0);
+        setStatus("ingestStatus", `Uploaded ${count} file(s). Ingest accepted ${accepted} leads.`, "success");
+
+        input.value = "";
+        await loadLeads();
+        await loadAnalytics();
+        await loadDialerStatus();
+        await loadWorkerLogs(false);
+      }
+
+      async function runIngestNow() {
+        const res = await fetch("/api/ingest/run", { method: "POST" });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Ingest run failed");
+
+        $("ingestOutput").textContent = JSON.stringify(data, null, 2);
+        const summaries = data.summaries || [];
+        const accepted = summaries.reduce((sum, row) => sum + (row.accepted || 0), 0);
+        setStatus("ingestStatus", `Ingest complete. Accepted ${accepted} leads from ${summaries.length} file(s).`, "success");
+        await loadLeads();
+        await loadAnalytics();
+        await loadDialerStatus();
+        await loadWorkerLogs(false);
+      }
+
+      async function runBookingTest() {
+        const payload = {
+          provider: getValue("bookingProviderTest") || "calendly",
+          leadId: getValue("bookingLeadId") || undefined,
+          phone: getValue("bookingPhone") || undefined,
+          email: getValue("bookingEmail") || undefined
+        };
+
+        const hasIdentity = payload.leadId || payload.phone || payload.email;
+        if (!hasIdentity) throw new Error("Provide leadId, phone, or email for booking test");
+
+        const res = await fetch("/api/booking/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Booking test failed");
+
+        $("bookingTestOutput").textContent = JSON.stringify(data, null, 2);
+        setStatus(
+          "bookingTestStatus",
+          `Booking confirmed for lead ${data.leadId} via ${data.bookingSource}.`,
+          "success"
+        );
+
+        await loadLeads();
+        await loadAnalytics();
+      }
+
+      function parseJsonField(id, fallback) {
+        const raw = getValue(id).trim();
+        if (!raw) return fallback;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          throw new Error(`${id} is not valid JSON`);
+        }
+      }
+
+      function renderToolGuide(entry) {
+        if (!entry) {
+          $("toolGuide").textContent = "(select a catalog option)";
+          return;
+        }
+
+        const lines = [
+          `Label: ${entry.label}`,
+          `Type: ${entry.type}`,
+          `API Support: ${entry.apiSupport}`,
+          `Description: ${entry.description}`,
+          `Docs: ${entry.docsUrl}`,
+          `Dashboard: ${entry.dashboardUrl || "n/a"}`,
+          `Composer Prompt: ${entry.composerPrompt || "n/a"}`,
+          `API Notes: ${entry.apiNotes || "n/a"}`
+        ];
+
+        if (entry.dashboardSteps && entry.dashboardSteps.length) {
+          lines.push("", "Dashboard Steps:");
+          entry.dashboardSteps.forEach((step, index) => lines.push(`${index + 1}. ${step}`));
+        }
+
+        $("toolGuide").textContent = lines.join("\n");
+      }
+
+      function applyCatalogSelection() {
+        const key = getValue("toolCatalogSelect");
+        const entry = state.toolCatalog.find((item) => item.key === key);
+        renderToolGuide(entry);
+        if (!entry) return;
+
+        setValue("toolType", entry.type || "");
+        const starter = entry.starterPayload || {};
+        setValue("toolName", starter.name || "");
+        setValue("toolDescription", starter.description || "");
+        setValue("toolServerUrl", ((starter.server || {}).url) || "");
+        setValue("toolParametersJson", JSON.stringify(starter.parameters || {}, null, 2));
+        setValue("toolEnvJson", JSON.stringify(starter.environmentVariables || [], null, 2));
+        setValue("toolCode", starter.code || "");
+      }
+
+      async function loadToolCatalog() {
+        const res = await fetch("/api/vapi/tool-catalog");
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Tool catalog load failed");
+
+        state.toolCatalog = data.catalog || [];
+        const select = $("toolCatalogSelect");
+        select.innerHTML = "";
+        state.toolCatalog.forEach((entry) => {
+          const opt = document.createElement("option");
+          opt.value = entry.key;
+          opt.textContent = `${entry.label} [${entry.apiSupport}]`;
+          select.appendChild(opt);
+        });
+
+        if (state.toolCatalog.length) {
+          if (!getValue("toolCatalogSelect")) {
+            setValue("toolCatalogSelect", state.toolCatalog[0].key);
+          }
+          applyCatalogSelection();
+        }
+      }
+
+      function buildToolPayloadFromForm() {
+        const type = getValue("toolType");
+        const tool = {
+          type,
+          name: getValue("toolName") || undefined,
+          description: getValue("toolDescription") || undefined
+        };
+
+        const params = parseJsonField("toolParametersJson", {});
+        if (params && Object.keys(params).length > 0) {
+          tool.parameters = params;
+          tool.function = {
+            name: getValue("toolName") || "custom_function",
+            description: getValue("toolDescription") || "Custom function tool",
+            parameters: params
+          };
+        }
+
+        const envVars = parseJsonField("toolEnvJson", []);
+        if (Array.isArray(envVars) && envVars.length > 0) {
+          tool.environmentVariables = envVars;
+        }
+
+        const code = getValue("toolCode");
+        if (code) tool.code = code;
+
+        const serverUrl = getValue("toolServerUrl");
+        if (serverUrl) tool.server = { url: serverUrl };
+
+        return tool;
+      }
+
+      async function listTools() {
+        const query = new URLSearchParams();
+        if (getValue("vapiApiKey")) query.set("vapiApiKey", getValue("vapiApiKey"));
+        if (getValue("vapiBaseUrl")) query.set("vapiBaseUrl", getValue("vapiBaseUrl"));
+        const res = await fetch(`/api/vapi/tools?${query.toString()}`);
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || data.details || "Tool list failed");
+
+        state.vapiTools = data.tools || [];
+        $("toolsOutput").textContent = JSON.stringify(state.vapiTools, null, 2);
+        setStatus("toolsStatus", `Loaded ${state.vapiTools.length} tools from Vapi`, "success");
+      }
+
+      async function createTool() {
+        const payload = {
+          vapiApiKey: getValue("vapiApiKey"),
+          vapiBaseUrl: getValue("vapiBaseUrl"),
+          tool: buildToolPayloadFromForm()
+        };
+
+        const res = await fetch("/api/vapi/tools", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || data.details || "Tool create failed");
+
+        $("selectedToolId").value = data.tool.id || "";
+        $("toolsOutput").textContent = JSON.stringify(data.tool, null, 2);
+        setStatus("toolsStatus", `Created tool ${data.tool.id || ""}`, "success");
+      }
+
+      async function updateTool() {
+        const toolId = getValue("selectedToolId");
+        if (!toolId) throw new Error("selectedToolId is required for update");
+
+        const payload = {
+          vapiApiKey: getValue("vapiApiKey"),
+          vapiBaseUrl: getValue("vapiBaseUrl"),
+          patch: buildToolPayloadFromForm()
+        };
+
+        const res = await fetch(`/api/vapi/tools/${toolId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || data.details || "Tool update failed");
+
+        $("toolsOutput").textContent = JSON.stringify(data.tool, null, 2);
+        setStatus("toolsStatus", `Updated tool ${toolId}`, "success");
+      }
+
+      async function deleteTool() {
+        const toolId = getValue("selectedToolId");
+        if (!toolId) throw new Error("selectedToolId is required for delete");
+
+        const payload = {
+          vapiApiKey: getValue("vapiApiKey"),
+          vapiBaseUrl: getValue("vapiBaseUrl")
+        };
+
+        const res = await fetch(`/api/vapi/tools/${toolId}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || data.details || "Tool delete failed");
+
+        $("toolsOutput").textContent = JSON.stringify(data.tool || { deleted: toolId }, null, 2);
+        setStatus("toolsStatus", `Deleted tool ${toolId}`, "success");
+      }
+
+      async function attachToolsToAssistant() {
+        const assistantId = getValue("attachAssistantId");
+        if (!assistantId) throw new Error("attachAssistantId is required");
+
+        const toolIds = getValue("attachToolIds");
+        if (!toolIds) throw new Error("attachToolIds is required");
+
+        const payload = {
+          vapiApiKey: getValue("vapiApiKey"),
+          vapiBaseUrl: getValue("vapiBaseUrl"),
+          toolIds,
+          mode: getValue("attachMode") || "append"
+        };
+
+        const res = await fetch(`/api/vapi/assistants/${assistantId}/tool-ids`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || data.details || "Attach toolIds failed");
+
+        $("toolsOutput").textContent = JSON.stringify(data, null, 2);
+        setStatus("toolsStatus", `Updated assistant toolIds (${data.mode})`, "success");
+      }
+
+      async function placeTestCall() {
+        setStatus("callStatus", "Placing test call...", "");
+        const parsedVars = parseScriptVariablesText(getValue("scriptVariablesText"));
+        if (parsedVars.errors.length) {
+          setStatus("scriptVarStatus", `Fix script variables first: ${parsedVars.errors.join(" | ")}`, "error");
+          throw new Error("Script variables have parse errors");
+        }
+        const payload = {
+          toNumber: getValue("toNumber"),
+          voiceProfile: getValue("voiceProfile"),
+          vapiApiKey: getValue("vapiApiKey"),
+          vapiBaseUrl: getValue("vapiBaseUrl"),
+          phoneNumberId: getValue("phoneNumberId"),
+          firstName: getValue("firstName"),
+          company: getValue("company"),
+          calendlyUrl: getValue("calendlyUrl"),
+          googleCalendarUrl: getValue("googleCalendarUrl"),
+          bookingUrl: getValue("calendlyUrl") || getValue("googleCalendarUrl"),
+          templateId: state.selectedTemplateId || state.activeTemplateId,
+          customVariables: parsedVars.map
+        };
+
+        try {
+          const res = await fetch("/api/test-call", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || "Test call failed");
+
+          setStatus(
+            "callStatus",
+            `Call queued. callId=${data.callId} template=${data.templateId || "none"} quality=${data.templateQualityScore || "n/a"} vars=${data.customVariablesApplied || 0}`,
+            "success"
+          );
+          await loadLeads();
+          await loadAnalytics();
+        } catch (e) {
+          setStatus("callStatus", String(e), "error");
+        }
+      }
+
+      async function exportRetarget(snapshot) {
+        setStatus("retargetStatus", "Exporting retarget buckets...", "");
+        const payload = {
+          snapshot,
+          label: snapshot ? "dashboard-manual" : undefined
+        };
+
+        const res = await fetch("/api/retarget/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || "Retarget export failed");
+
+        const summary = data.result?.summary || {};
+        $("retargetOutput").textContent = JSON.stringify(data.result, null, 2);
+        setStatus(
+          "retargetStatus",
+          `Exported retarget CSVs. no_answer=${summary.noAnswer || 0} answered_hung_up=${summary.answeredHungUp || 0} voicemail=${summary.voicemail || 0} no_contact=${summary.noContact || 0}`,
+          "success"
+        );
+      }
+
+      async function loadRetargetSummary() {
+        try {
+          const res = await fetch("/api/retarget/summary");
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || "Retarget summary failed");
+          const summary = data.summary || {};
+          setStatus(
+            "retargetStatus",
+            `Retarget ready: no_answer=${summary.noAnswer || 0} answered_hung_up=${summary.answeredHungUp || 0} voicemail=${summary.voicemail || 0} no_contact=${summary.noContact || 0}`,
+            ""
+          );
+        } catch (e) {
+          setStatus("retargetStatus", String(e), "error");
+        }
+      }
+
+      async function loadLeads() {
+        const tbody = $("leadsTable");
+        tbody.innerHTML = "";
+
+        try {
+          const res = await fetch("/api/leads");
+          const data = await res.json();
+          const leads = data.leads || [];
+          state.leadsSnapshot = leads;
+
+          if (!leads.length) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = '<td colspan="9">No leads yet.</td>';
+            tbody.appendChild(tr);
+            await loadRetargetSummary();
+            updateRunAlert();
+            return;
+          }
+
+          leads.forEach((lead) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td class="mono">${lead.id || ""}</td>
+              <td>${lead.phone || ""}</td>
+              <td>${lead.status || ""}</td>
+              <td>${lead.outcome || ""}</td>
+              <td>${lead.retargetBucket || lead.retargetReason || ""}</td>
+              <td>${lead.attempts || 0}</td>
+              <td>${lead.bookingSource || ""}</td>
+              <td class="mono">${lead.ghlContactId || ""}</td>
+              <td>${lead.updatedAt || ""}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+          await loadRetargetSummary();
+          updateRunAlert();
+        } catch (e) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td colspan="9">${String(e)}</td>`;
+          tbody.appendChild(tr);
+        }
+      }
+
+      function bindEvents() {
+        $("saveSettings").addEventListener("click", saveLocal);
+        $("saveSettingsFromVars").addEventListener("click", () => {
+          saveLocal();
+          resolveGuideReadiness();
+        });
+        $("scriptPreviewVars").addEventListener("click", () => {
+          previewScriptVariables();
+          resolveGuideReadiness();
+        });
+        $("guideRefresh").addEventListener("click", async () => {
+          try {
+            await loadRequirements();
+            await loadDialerStatus();
+            resolveGuideReadiness();
+          } catch (e) {
+            setStatus("guideStatus", String(e), "error");
+          }
+        });
+        $("loadDefaults").addEventListener("click", loadRequirements);
+        $("testCall").addEventListener("click", placeTestCall);
+        $("refreshLeads").addEventListener("click", loadLeads);
+        $("csvUploadAndIngest").addEventListener("click", async () => {
+          try { await uploadCsvAndIngest(); } catch (e) { setStatus("ingestStatus", String(e), "error"); }
+        });
+        $("ingestRunNow").addEventListener("click", async () => {
+          try { await runIngestNow(); } catch (e) { setStatus("ingestStatus", String(e), "error"); }
+        });
+        $("refreshDialerStatus").addEventListener("click", async () => {
+          try { await loadDialerStatus(); } catch (e) { setStatus("ingestStatus", String(e), "error"); }
+        });
+        $("refreshWorkerLogs").addEventListener("click", async () => {
+          try { await loadWorkerLogs(false); } catch (e) { setStatus("workerLogStatus", String(e), "error"); }
+        });
+        $("resetStuckDialing").addEventListener("click", async () => {
+          try { await resetStuckDialingLeads(); } catch (e) { setStatus("ingestStatus", String(e), "error"); }
+        });
+        $("ghlImportAndIngest").addEventListener("click", async () => {
+          try { await importGhlSmartListAndIngest(); } catch (e) { setStatus("ghlImportStatus", String(e), "error"); }
+        });
+        $("runBookingTest").addEventListener("click", async () => {
+          try { await runBookingTest(); } catch (e) { setStatus("bookingTestStatus", String(e), "error"); }
+        });
+        $("inboundLoad").addEventListener("click", async () => {
+          try { await loadInboundProfile(); } catch (e) { setStatus("inboundStatus", String(e), "error"); }
+        });
+        $("inboundSave").addEventListener("click", async () => {
+          try { await saveInboundProfile(); } catch (e) { setStatus("inboundStatus", String(e), "error"); }
+        });
+        $("inboundAttachPhone").addEventListener("click", async () => {
+          try { await attachInboundPhone(); } catch (e) { setStatus("inboundStatus", String(e), "error"); }
+        });
+        $("inboundListPhoneNumbers").addEventListener("click", async () => {
+          try { await listInboundPhoneNumbers(); } catch (e) { setStatus("inboundStatus", String(e), "error"); }
+        });
+        $("refreshAnalytics").addEventListener("click", async () => {
+          try { await loadAnalytics(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+        $("templateReload").addEventListener("click", async () => {
+          await loadTemplates();
+          setStatus("templateStatus", "Templates reloaded", "success");
+        });
+
+        $("templateCreate").addEventListener("click", async () => {
+          try { await createTemplate(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+
+        $("templateSave").addEventListener("click", async () => {
+          try { await saveTemplate(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+
+        $("templateActivate").addEventListener("click", async () => {
+          try { await activateTemplate(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+
+        $("templateDelete").addEventListener("click", async () => {
+          try { await deleteTemplate(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+
+        $("templateCompile").addEventListener("click", async () => {
+          try { await compileTemplate(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+
+        $("templatePreview").addEventListener("click", async () => {
+          try { await previewTemplate(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+
+        $("templateVapiDraft").addEventListener("click", async () => {
+          try { await loadVapiDraft(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+
+        $("templatePublishVapi").addEventListener("click", async () => {
+          try { await publishTemplateToVapi(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+        $("createAdditionalAgent").addEventListener("click", async () => {
+          try { await createAdditionalAgent(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+
+        $("templateListVapi").addEventListener("click", async () => {
+          try { await listVapiAssistants(); } catch (e) { setStatus("templateStatus", String(e), "error"); }
+        });
+
+        $("toolLoadCatalog").addEventListener("click", async () => {
+          try {
+            await loadToolCatalog();
+            setStatus("toolsStatus", "Tool catalog loaded", "success");
+          } catch (e) {
+            setStatus("toolsStatus", String(e), "error");
+          }
+        });
+
+        $("toolCatalogSelect").addEventListener("change", applyCatalogSelection);
+        $("toolList").addEventListener("click", async () => {
+          try { await listTools(); } catch (e) { setStatus("toolsStatus", String(e), "error"); }
+        });
+        $("toolCreate").addEventListener("click", async () => {
+          try { await createTool(); } catch (e) { setStatus("toolsStatus", String(e), "error"); }
+        });
+        $("toolUpdate").addEventListener("click", async () => {
+          try { await updateTool(); } catch (e) { setStatus("toolsStatus", String(e), "error"); }
+        });
+        $("toolDelete").addEventListener("click", async () => {
+          try { await deleteTool(); } catch (e) { setStatus("toolsStatus", String(e), "error"); }
+        });
+        $("toolAttach").addEventListener("click", async () => {
+          try { await attachToolsToAssistant(); } catch (e) { setStatus("toolsStatus", String(e), "error"); }
+        });
+        $("retargetExportLatest").addEventListener("click", async () => {
+          try { await exportRetarget(false); } catch (e) { setStatus("retargetStatus", String(e), "error"); }
+        });
+        $("retargetExportSnapshot").addEventListener("click", async () => {
+          try { await exportRetarget(true); } catch (e) { setStatus("retargetStatus", String(e), "error"); }
+        });
+
+        $("templateSelect").addEventListener("change", () => {
+          state.selectedTemplateId = getValue("templateSelect");
+          const selected = state.templates.find((tpl) => tpl.id === state.selectedTemplateId);
+          if (selected) formFromTemplate(selected);
+        });
+
+        ["vapiApiKey", "phoneNumberId", "calendlyUrl", "googleCalendarUrl", "scriptVariablesText"].forEach((id) => {
+          $(id).addEventListener("change", () => resolveGuideReadiness());
+        });
+      }
+
+      async function boot() {
+        await renderLucideReactIcons();
+        loadLocal();
+        previewScriptVariables();
+        bindEvents();
+        bindSidebarNav();
+        await loadRulePacks();
+        await loadToolCatalog();
+        await loadTemplates();
+        await loadRequirements();
+        await loadInboundProfile();
+        await loadDialerStatus();
+        await loadWorkerLogs(true);
+        startWorkerLogStream();
+        await loadLeads();
+        await loadAnalytics();
+        await loadRetargetSummary();
+        resolveGuideReadiness();
+      }
+
+      boot().catch((error) => {
+        setStatus("templateStatus", String(error), "error");
+      });
+    </script>
+  </body>
+</html>

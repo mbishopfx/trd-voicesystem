@@ -1,0 +1,1144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>True Rank Dialer OS</title>
+    <link rel="stylesheet" href="./tailwind.css" />
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: radial-gradient(circle at 15% 10%, rgba(45, 226, 183, 0.15), transparent 35%),
+          radial-gradient(circle at 85% 5%, rgba(18, 194, 233, 0.2), transparent 30%),
+          linear-gradient(150deg, #08141f 0%, #0f1f2d 45%, #12263a 100%);
+        color: #e6f2ff;
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+      }
+
+      #app {
+        min-height: 100vh;
+      }
+
+      .font-display {
+        font-family: "Sora", sans-serif;
+      }
+
+      .glass {
+        background: linear-gradient(160deg, rgba(13, 28, 41, 0.78), rgba(10, 22, 34, 0.68));
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(160, 214, 255, 0.18);
+      }
+
+      .pill {
+        border: 1px solid rgba(160, 214, 255, 0.28);
+        background: rgba(15, 38, 55, 0.46);
+      }
+
+      .scroll-dark {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(160, 214, 255, 0.35) transparent;
+      }
+
+      .scroll-dark::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+
+      .scroll-dark::-webkit-scrollbar-thumb {
+        background: rgba(160, 214, 255, 0.3);
+        border-radius: 999px;
+      }
+
+      .backdrop {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image: linear-gradient(rgba(160, 214, 255, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(160, 214, 255, 0.05) 1px, transparent 1px);
+        background-size: 28px 28px;
+        opacity: 0.35;
+        mask-image: radial-gradient(circle at 50% 28%, black 20%, transparent 70%);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="backdrop"></div>
+    <div id="app"></div>
+
+    <script type="module">
+      import React, { useCallback, useEffect, useMemo, useState } from "https://esm.sh/react@18.3.1";
+      import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
+      import htm from "https://esm.sh/htm@3.1.1";
+
+      const html = htm.bind(React.createElement);
+
+      async function readFile(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.readAsText(file);
+        });
+      }
+
+      async function getJson(url) {
+        const res = await fetch(url);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.error || `Request failed (${res.status})`);
+        }
+        return data;
+      }
+
+      async function postJson(url, body = {}) {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.error || `Request failed (${res.status})`);
+        }
+        return data;
+      }
+
+      function dt(value) {
+        if (!value) return "-";
+        const ts = Date.parse(value);
+        if (!Number.isFinite(ts)) return value;
+        return new Date(ts).toLocaleString();
+      }
+
+      function toLines(text) {
+        return String(text || "")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean);
+      }
+
+      function toRebuttals(text) {
+        return String(text || "")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .map((line) => {
+            const parts = line.split("=>");
+            if (parts.length < 2) return null;
+            const objection = parts[0].trim();
+            const response = parts.slice(1).join("=>").trim();
+            if (!objection || !response) return null;
+            return { objection, response };
+          })
+          .filter(Boolean);
+      }
+
+      function extractCallId(text) {
+        const raw = String(text || "");
+        const match = raw.match(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i);
+        return match ? match[0] : "";
+      }
+
+      function StatCard({ title, value, hint }) {
+        return html`
+          <div className="glass rounded-2xl p-4 shadow-xl transition-transform hover:-translate-y-0.5">
+            <div className="text-xs uppercase tracking-[0.14em] text-slate-300">${title}</div>
+            <div className="font-display mt-2 text-3xl font-semibold text-cyan-100">${value}</div>
+            <div className="mt-1 text-xs text-slate-400">${hint}</div>
+          </div>
+        `;
+      }
+
+      const TONE_PRESETS = {
+        professional: {
+          persona: "Senior outbound specialist with executive presence",
+          tone: "Calm, credible, concise, and respectful. Sound like a trusted advisor."
+        },
+        consultative: {
+          persona: "Consultative growth advisor",
+          tone: "Curious, diagnostic, and practical. Ask short questions and educate briefly."
+        },
+        energetic: {
+          persona: "High-energy opportunity scout",
+          tone: "Upbeat, friendly, and concise while staying professional and non-pushy."
+        }
+      };
+
+      function App() {
+        const [view, setView] = useState("campaign");
+        const [status, setStatus] = useState(null);
+        const [calls, setCalls] = useState([]);
+        const [callLoading, setCallLoading] = useState(false);
+        const [callQuery, setCallQuery] = useState("");
+        const [callSelected, setCallSelected] = useState(null);
+
+        const [logs, setLogs] = useState([]);
+        const [logScope, setLogScope] = useState("all");
+        const [logAuto, setLogAuto] = useState(true);
+        const [logAfterTs, setLogAfterTs] = useState(0);
+
+        const [files, setFiles] = useState([]);
+        const [busy, setBusy] = useState(false);
+        const [ingestResult, setIngestResult] = useState(null);
+        const [message, setMessage] = useState("");
+        const [error, setError] = useState("");
+        const [wizardLoading, setWizardLoading] = useState(false);
+        const [wizardStep, setWizardStep] = useState(1);
+        const [wizardResult, setWizardResult] = useState(null);
+        const [templates, setTemplates] = useState([]);
+        const [phoneNumbers, setPhoneNumbers] = useState([]);
+        const [wizard, setWizard] = useState({
+          sourceTemplateId: "",
+          agentName: "TRD Growth Concierge",
+          templateName: "TRD Growth Concierge Template",
+          voiceProfile: "female",
+          tonePreset: "professional",
+          toneInstructions: "Calm, credible, helpful, and concise. Never pushy.",
+          industry: "B2B services",
+          objective: "Get attention and book a free AI Search Dominance strategy meeting.",
+          offerSummary: "We identify where revenue is being lost due to low AI search visibility and disconnected tools.",
+          openingScript:
+            "Hi {{leadFirstName}}, this is True Rank Digital. We found an AI search visibility gap for {{leadCompany}} and wanted to offer a free strategy review.",
+          cta: "Offer two meeting windows and send booking link right away.",
+          followUpFallback: "If they cannot book now, ask best contact channel and preferred follow-up window.",
+          knowledgeBaseText:
+            "True Rank Digital specializes in AI search optimization and visibility dominance.\\nThe meeting is free and focused on exposing lost revenue from disconnected tools and weak AI visibility.\\nOur team is Google-certified and can streamline marketing + CRM workflows end-to-end.",
+          valuePointsText:
+            "We map where your business is underrepresented in AI-powered search experiences.\\nWe show practical quick-win changes that improve visibility without a full rebuild.",
+          allowedTopicsText: "AI search optimization\\nvisibility findings\\nmeeting logistics\\nhigh-level fit",
+          forbiddenTopicsText: "politics\\nmedical advice\\nlegal advice\\noff-topic technical consulting",
+          rebuttalsText:
+            "Not interested => Totally fair. This is a free review to show where money is leaking today from AI visibility gaps, then you decide if any action is worth it.\\nSend email => Absolutely. I can send a short summary, and the free walkthrough helps our Google-certified team prioritize what to fix first so you are not guessing.",
+          phoneNumberId: ""
+        });
+
+        const runtime = status?.runtime || {};
+        const queue = status?.queue || { byStatus: {} };
+
+        const loadStatus = useCallback(async () => {
+          const data = await getJson("/api/dialer/status");
+          setStatus(data);
+        }, []);
+
+        const loadCalls = useCallback(
+          async (queryOverride) => {
+            setCallLoading(true);
+            try {
+              const q = typeof queryOverride === "string" ? queryOverride : callQuery;
+              const url = new URL(window.location.origin + "/api/calls");
+              url.searchParams.set("limit", "500");
+              if (q.trim()) url.searchParams.set("q", q.trim());
+              const data = await getJson(url.pathname + url.search);
+              setCalls(data.calls || []);
+            } finally {
+              setCallLoading(false);
+            }
+          },
+          [callQuery]
+        );
+
+        const loadLogs = useCallback(
+          async (incremental = true) => {
+            const url = new URL(window.location.origin + "/api/logs/worker");
+            url.searchParams.set("limit", "500");
+            if (logScope !== "all") url.searchParams.set("scope", logScope);
+            if (incremental && logAfterTs > 0) url.searchParams.set("afterTs", String(logAfterTs));
+
+            const data = await getJson(url.pathname + url.search);
+            const rows = data.logs || [];
+
+            if (incremental && logAfterTs > 0) {
+              if (rows.length > 0) {
+                setLogs((prev) => [...prev, ...rows].slice(-3000));
+              }
+            } else {
+              setLogs(rows);
+            }
+
+            if (typeof data.latestTs === "number") {
+              setLogAfterTs(data.latestTs);
+            }
+          },
+          [logAfterTs, logScope]
+        );
+
+        const loadCallDetail = useCallback(async (leadId) => {
+          const data = await getJson(`/api/calls/${encodeURIComponent(leadId)}`);
+          setCallSelected(data.call || null);
+        }, []);
+
+        const hydrateWizardFromTemplate = useCallback((template) => {
+          if (!template) return;
+          setWizard((prev) => ({
+            ...prev,
+            sourceTemplateId: template.id || prev.sourceTemplateId,
+            templateName: `${template.name || "Agent"} Copy`,
+            voiceProfile: template.voiceProfile === "male" || template.voiceProfile === "female" ? template.voiceProfile : prev.voiceProfile,
+            industry: template.industry || prev.industry,
+            objective: template.objective || prev.objective,
+            offerSummary: template.offerSummary || prev.offerSummary,
+            openingScript: template.openingScript || prev.openingScript,
+            cta: template.cta || prev.cta,
+            followUpFallback: template.followUpFallback || prev.followUpFallback,
+            knowledgeBaseText: Array.isArray(template.knowledgeBase) ? template.knowledgeBase.join("\n") : prev.knowledgeBaseText,
+            valuePointsText: Array.isArray(template.valuePoints) ? template.valuePoints.join("\n") : prev.valuePointsText,
+            allowedTopicsText: Array.isArray(template.allowedTopics) ? template.allowedTopics.join("\n") : prev.allowedTopicsText,
+            forbiddenTopicsText: Array.isArray(template.forbiddenTopics) ? template.forbiddenTopics.join("\n") : prev.forbiddenTopicsText,
+            rebuttalsText: Array.isArray(template.rebuttals)
+              ? template.rebuttals
+                  .map((r) => `${r.objection || ""} => ${r.response || ""}`)
+                  .filter((line) => line.trim() !== "=>")
+                  .join("\n")
+              : prev.rebuttalsText
+          }));
+        }, []);
+
+        const loadWizardDependencies = useCallback(async () => {
+          setWizardLoading(true);
+          try {
+            const [tplRes, phoneRes] = await Promise.all([getJson("/api/templates"), getJson("/api/vapi/phone-numbers")]);
+            const templateRows = tplRes.templates || [];
+            const phoneRows = phoneRes.phoneNumbers || [];
+            setTemplates(templateRows);
+            setPhoneNumbers(phoneRows);
+
+            const activeTemplate = templateRows.find((tpl) => tpl.id === tplRes.activeTemplateId) || templateRows[0];
+            setWizard((prev) => ({
+              ...prev,
+              sourceTemplateId: prev.sourceTemplateId || activeTemplate?.id || "",
+              phoneNumberId: prev.phoneNumberId || phoneRows[0]?.id || ""
+            }));
+            if (activeTemplate) hydrateWizardFromTemplate(activeTemplate);
+          } finally {
+            setWizardLoading(false);
+          }
+        }, [hydrateWizardFromTemplate]);
+
+        const applyTonePreset = useCallback((presetKey) => {
+          const preset = TONE_PRESETS[presetKey] || TONE_PRESETS.professional;
+          setWizard((prev) => ({
+            ...prev,
+            tonePreset: presetKey,
+            toneInstructions: preset.tone
+          }));
+        }, []);
+
+        const createAgentFromWizard = useCallback(async () => {
+          if (!wizard.phoneNumberId) {
+            setError("Select a Twilio/Vapi phone number before creating the agent.");
+            return;
+          }
+          if (!wizard.agentName.trim()) {
+            setError("Enter an agent name.");
+            return;
+          }
+
+          setWizardLoading(true);
+          setError("");
+          setMessage("Creating onboarding template and provisioning assistant...");
+          setWizardResult(null);
+
+          try {
+            const createTpl = await postJson("/api/templates/create-default", {
+              name: wizard.templateName || `${wizard.agentName} Template`
+            });
+            const newTemplate = createTpl.template;
+            const sourceTemplate = templates.find((tpl) => tpl.id === wizard.sourceTemplateId) || newTemplate;
+            const preset = TONE_PRESETS[wizard.tonePreset] || TONE_PRESETS.professional;
+
+            const composedTemplate = {
+              ...sourceTemplate,
+              ...newTemplate,
+              name: wizard.templateName || `${wizard.agentName} Template`,
+              description: `Onboarding wizard template for ${wizard.agentName}`,
+              voiceProfile: wizard.voiceProfile,
+              industry: wizard.industry,
+              persona: `${preset.persona}. ${wizard.toneInstructions}`.trim(),
+              objective: wizard.objective,
+              offerSummary: wizard.offerSummary,
+              openingScript: wizard.openingScript,
+              cta: wizard.cta,
+              followUpFallback: wizard.followUpFallback,
+              knowledgeBase: toLines(wizard.knowledgeBaseText),
+              valuePoints: toLines(wizard.valuePointsText),
+              allowedTopics: toLines(wizard.allowedTopicsText),
+              forbiddenTopics: toLines(wizard.forbiddenTopicsText),
+              rebuttals: toRebuttals(wizard.rebuttalsText)
+            };
+
+            await postJson("/api/templates/save", { template: composedTemplate });
+
+            const created = await postJson("/api/vapi/create-additional-agent", {
+              templateId: composedTemplate.id,
+              assistantName: wizard.agentName,
+              phoneNumberId: wizard.phoneNumberId
+            });
+
+            setWizardResult({
+              templateId: composedTemplate.id,
+              templateName: composedTemplate.name,
+              assistantId: created.assistantId,
+              assistantName: created.assistantName || wizard.agentName,
+              phoneNumberId: wizard.phoneNumberId,
+              phoneNumber: created.phoneNumber?.number || ""
+            });
+            setMessage(`Agent ${created.assistantName || wizard.agentName} created and phone number assigned.`);
+            setWizardStep(4);
+            await loadWizardDependencies();
+          } catch (e) {
+            setError(String(e));
+          } finally {
+            setWizardLoading(false);
+          }
+        }, [wizard, templates, loadWizardDependencies]);
+
+        useEffect(() => {
+          Promise.all([loadStatus(), loadCalls(""), loadLogs(false)]).catch((e) => setError(String(e)));
+        }, []);
+
+        useEffect(() => {
+          const timer = setInterval(() => {
+            loadStatus().catch(() => {});
+          }, 7000);
+          return () => clearInterval(timer);
+        }, [loadStatus]);
+
+        useEffect(() => {
+          if (!logAuto) return;
+          const timer = setInterval(() => {
+            loadLogs(true).catch(() => {});
+          }, 5000);
+          return () => clearInterval(timer);
+        }, [logAuto, loadLogs]);
+
+        useEffect(() => {
+          setLogAfterTs(0);
+          loadLogs(false).catch((e) => setError(String(e)));
+        }, [logScope]);
+
+        useEffect(() => {
+          if (view !== "agentWizard") return;
+          loadWizardDependencies().catch((e) => setError(String(e)));
+        }, [view, loadWizardDependencies]);
+
+        const runIngestOnly = useCallback(async () => {
+          setBusy(true);
+          setError("");
+          setMessage("Running ingest...");
+          try {
+            const data = await postJson("/api/ingest/run", {});
+            setIngestResult(data);
+            setMessage(`Ingest complete. files=${(data.summaries || []).length}`);
+            await loadStatus();
+            await loadCalls();
+          } catch (e) {
+            setError(String(e));
+          } finally {
+            setBusy(false);
+          }
+        }, [loadStatus, loadCalls]);
+
+        const uploadAndIngest = useCallback(async () => {
+          if (files.length === 0) {
+            setError("Select at least one CSV file.");
+            return;
+          }
+
+          setBusy(true);
+          setError("");
+          setMessage(`Uploading ${files.length} file(s)...`);
+
+          try {
+            const payloadFiles = [];
+            for (const file of files) {
+              payloadFiles.push({ fileName: file.name, csvContent: await readFile(file) });
+            }
+            const data = await postJson("/api/ingest/upload", { files: payloadFiles, runIngest: true });
+            setIngestResult(data);
+            const accepted = (data.ingest?.summaries || []).reduce((sum, row) => sum + (row.accepted || 0), 0);
+            setMessage(`Upload complete. accepted=${accepted}`);
+            setFiles([]);
+            const input = document.getElementById("csv-input");
+            if (input) input.value = "";
+            await loadStatus();
+            await loadCalls();
+          } catch (e) {
+            setError(String(e));
+          } finally {
+            setBusy(false);
+          }
+        }, [files, loadStatus, loadCalls]);
+
+        const resetStuck = useCallback(async () => {
+          setError("");
+          setMessage("Resetting stale dialing leads...");
+          try {
+            const data = await postJson("/api/dialer/reset-stuck", { thresholdSeconds: 180 });
+            setMessage(`Reset complete. reset=${data.result?.reset || 0}, failed=${data.result?.failed || 0}`);
+            await loadStatus();
+            await loadCalls();
+            await loadLogs(true);
+          } catch (e) {
+            setError(String(e));
+          }
+        }, [loadStatus, loadCalls, loadLogs]);
+
+        const exportLogs = useCallback(() => {
+          const blob = new Blob([JSON.stringify(logs, null, 2)], { type: "application/json" });
+          const href = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = href;
+          a.download = `runtime-logs-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+          a.click();
+          URL.revokeObjectURL(href);
+        }, [logs]);
+
+        const navItems = [
+          { id: "campaign", label: "Campaign Run" },
+          { id: "agentWizard", label: "Agent Onboarding" },
+          { id: "logs", label: "Live Logs" },
+          { id: "calls", label: "Calls & Media" }
+        ];
+
+        const runState = useMemo(() => {
+          const byStatus = queue.byStatus || {};
+          const active = (byStatus.queued || 0) + (byStatus.retry || 0) + (byStatus.dialing || 0);
+          return active > 0 ? "Campaign Active" : "No Active Queue";
+        }, [queue]);
+
+        return html`
+          <div className="relative z-10 p-4 md:p-6">
+            <div className="mx-auto max-w-7xl">
+              <header className="glass rounded-3xl p-5 shadow-2xl">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="pill inline-flex items-center rounded-full px-3 py-1 text-xs uppercase tracking-[0.14em] text-cyan-100">
+                      True Rank Digital
+                    </div>
+                    <h1 className="font-display mt-3 text-2xl md:text-4xl font-semibold text-slate-50">Dialer Command Center</h1>
+                    <p className="mt-2 text-sm text-slate-300">Campaign control, full logs, transcripts, and call audio in one place.</p>
+                  </div>
+                  <div className="pill rounded-xl px-3 py-2 text-sm text-cyan-100">${runState} · dueNow=${queue.dueNow || 0}</div>
+                </div>
+              </header>
+
+              <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[250px_1fr]">
+                <aside className="glass rounded-2xl p-4 shadow-xl">
+                  <div className="text-xs uppercase tracking-[0.14em] text-slate-400">Workspace</div>
+                  <div className="mt-3 space-y-2">
+                    ${navItems.map((item) => {
+                      const active = item.id === view;
+                      return html`
+                        <button
+                          key=${item.id}
+                          onClick=${() => setView(item.id)}
+                          className=${`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
+                            active
+                              ? "border-cyan-300/40 bg-cyan-500/15 text-cyan-100"
+                              : "border-slate-300/15 bg-slate-900/35 text-slate-200 hover:bg-slate-800/45"
+                          }`}
+                        >
+                          ${item.label}
+                        </button>
+                      `;
+                    })}
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    <button onClick=${() => loadStatus().catch((e) => setError(String(e)))} className="w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2 text-sm">
+                      Refresh Status
+                    </button>
+                    <button onClick=${resetStuck} className="w-full rounded-xl border border-amber-300/30 bg-amber-500/15 px-3 py-2 text-sm text-amber-100">
+                      Reset Stuck Dialing
+                    </button>
+                    <a href="/dashboard/legacy-dashboard.html" className="block text-center rounded-xl border border-slate-300/20 px-3 py-2 text-sm text-slate-300">
+                      Legacy Console
+                    </a>
+                  </div>
+                </aside>
+
+                <main className="space-y-4">
+                  <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    <${StatCard} title="Total" value=${queue.totalLeads || 0} hint="All leads in state" />
+                    <${StatCard} title="Queued" value=${(queue.byStatus || {}).queued || 0} hint="Ready to dial" />
+                    <${StatCard} title="Dialing" value=${(queue.byStatus || {}).dialing || 0} hint="In progress" />
+                    <${StatCard} title="Booked" value=${(queue.byStatus || {}).booked || 0} hint="Wins" />
+                  </section>
+
+                  ${message
+                    ? html`<div className="rounded-xl border border-emerald-300/30 bg-emerald-500/15 px-4 py-3 text-sm text-emerald-100">${message}</div>`
+                    : null}
+                  ${error
+                    ? html`<div className="rounded-xl border border-rose-300/30 bg-rose-500/15 px-4 py-3 text-sm text-rose-100">${error}</div>`
+                    : null}
+
+                  ${view === "campaign"
+                    ? html`
+                        <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                          <div className="glass rounded-2xl p-5 shadow-xl">
+                            <h2 className="font-display text-xl text-slate-50">CSV Upload + GO</h2>
+                            <p className="mt-1 text-sm text-slate-300">Upload CSV files and run immediate ingest + queueing.</p>
+
+                            <label className="mt-4 block text-xs uppercase tracking-[0.14em] text-slate-400">CSV Files</label>
+                            <input
+                              id="csv-input"
+                              type="file"
+                              accept=".csv,text/csv"
+                              multiple
+                              onChange=${(e) => setFiles(Array.from(e.target.files || []))}
+                              className="mt-2 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2 text-sm"
+                            />
+                            <div className="mt-2 text-xs text-slate-400">Selected: ${files.length}</div>
+
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              <button onClick=${uploadAndIngest} disabled=${busy} className="rounded-xl border border-cyan-300/35 bg-cyan-500/18 px-4 py-2 text-sm text-cyan-100 disabled:opacity-50">
+                                ${busy ? "Working..." : "Upload + Ingest + GO"}
+                              </button>
+                              <button onClick=${runIngestOnly} disabled=${busy} className="rounded-xl border border-slate-300/20 bg-slate-900/45 px-4 py-2 text-sm disabled:opacity-50">
+                                Run Ingest Only
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="glass rounded-2xl p-5 shadow-xl">
+                            <h2 className="font-display text-xl text-slate-50">Runtime</h2>
+                            <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                              <div className="rounded-xl bg-slate-900/45 p-3">
+                                <div className="text-xs uppercase text-slate-400">Dialer</div>
+                                <div className="mt-1">${runtime.dialerActive ? "online" : "offline"}</div>
+                              </div>
+                              <div className="rounded-xl bg-slate-900/45 p-3">
+                                <div className="text-xs uppercase text-slate-400">Post-call Delay</div>
+                                <div className="mt-1">${runtime.postCallDelaySeconds || 0}s</div>
+                              </div>
+                              <div className="rounded-xl bg-slate-900/45 p-3">
+                                <div className="text-xs uppercase text-slate-400">Trust Imports</div>
+                                <div className="mt-1">${runtime.trustAllImports ? "enabled" : "disabled"}</div>
+                              </div>
+                              <div className="rounded-xl bg-slate-900/45 p-3">
+                                <div className="text-xs uppercase text-slate-400">Require Opt-In</div>
+                                <div className="mt-1">${runtime.requireOptIn ? "enabled" : "disabled"}</div>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 text-xs uppercase tracking-[0.14em] text-slate-400">Last Ingest</div>
+                            <pre className="scroll-dark mt-2 max-h-64 overflow-auto rounded-xl bg-slate-950/60 p-3 text-xs text-slate-200">${JSON.stringify(
+                              ingestResult || {},
+                              null,
+                              2
+                            )}</pre>
+                          </div>
+                        </section>
+                      `
+                    : null}
+
+                  ${view === "agentWizard"
+                    ? html`
+                        <section className="glass rounded-2xl p-5 shadow-xl">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h2 className="font-display text-xl text-slate-50">New Agent Onboarding Wizard</h2>
+                              <p className="mt-1 text-sm text-slate-300">Create a new voice agent with custom tone, then assign a Twilio number.</p>
+                            </div>
+                            <button
+                              onClick=${() => loadWizardDependencies().catch((e) => setError(String(e)))}
+                              className="rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2 text-sm"
+                              disabled=${wizardLoading}
+                            >
+                              ${wizardLoading ? "Loading..." : "Refresh Wizard Data"}
+                            </button>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+                            ${[1, 2, 3, 4].map((step) => html`
+                              <button
+                                key=${step}
+                                onClick=${() => setWizardStep(step)}
+                                className=${`rounded-xl border px-3 py-2 text-left text-sm ${
+                                  wizardStep === step
+                                    ? "border-cyan-300/40 bg-cyan-500/15 text-cyan-100"
+                                    : "border-slate-300/15 bg-slate-900/35 text-slate-300"
+                                }`}
+                              >
+                                Step ${step}
+                              </button>
+                            `)}
+                          </div>
+
+                          ${wizardStep === 1
+                            ? html`
+                                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                  <label className="text-sm text-slate-300">
+                                    Base Template
+                                    <select
+                                      value=${wizard.sourceTemplateId}
+                                      onChange=${(e) => {
+                                        const nextId = e.target.value;
+                                        const template = templates.find((tpl) => tpl.id === nextId);
+                                        setWizard((prev) => ({ ...prev, sourceTemplateId: nextId }));
+                                        if (template) hydrateWizardFromTemplate(template);
+                                      }}
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    >
+                                      <option value="">Select template</option>
+                                      ${templates.map((tpl) => html`<option key=${tpl.id} value=${tpl.id}>${tpl.name}</option>`)}
+                                    </select>
+                                  </label>
+
+                                  <label className="text-sm text-slate-300">
+                                    Agent Name
+                                    <input
+                                      value=${wizard.agentName}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, agentName: e.target.value }))}
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    />
+                                  </label>
+
+                                  <label className="text-sm text-slate-300">
+                                    Template Name
+                                    <input
+                                      value=${wizard.templateName}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, templateName: e.target.value }))}
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    />
+                                  </label>
+
+                                  <label className="text-sm text-slate-300">
+                                    Voice Profile
+                                    <select
+                                      value=${wizard.voiceProfile}
+                                      onChange=${(e) => setWizard((prev) => ({ ...prev, voiceProfile: e.target.value }))}
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    >
+                                      <option value="female">Female</option>
+                                      <option value="male">Male</option>
+                                    </select>
+                                  </label>
+                                </div>
+                              `
+                            : null}
+
+                          ${wizardStep === 2
+                            ? html`
+                                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                  <label className="text-sm text-slate-300">
+                                    Tone Preset
+                                    <select
+                                      value=${wizard.tonePreset}
+                                      onChange=${(e) => applyTonePreset(e.target.value)}
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    >
+                                      <option value="professional">Professional</option>
+                                      <option value="consultative">Consultative</option>
+                                      <option value="energetic">Energetic</option>
+                                    </select>
+                                  </label>
+                                  <label className="text-sm text-slate-300 md:col-span-2">
+                                    Custom Tone Instructions
+                                    <textarea
+                                      value=${wizard.toneInstructions}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, toneInstructions: e.target.value }))}
+                                      rows="3"
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    ></textarea>
+                                  </label>
+                                  <label className="text-sm text-slate-300">
+                                    Industry
+                                    <input
+                                      value=${wizard.industry}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, industry: e.target.value }))}
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    />
+                                  </label>
+                                  <label className="text-sm text-slate-300 md:col-span-2">
+                                    Objective
+                                    <textarea
+                                      value=${wizard.objective}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, objective: e.target.value }))}
+                                      rows="2"
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    ></textarea>
+                                  </label>
+                                  <label className="text-sm text-slate-300 md:col-span-2">
+                                    Offer Summary
+                                    <textarea
+                                      value=${wizard.offerSummary}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, offerSummary: e.target.value }))}
+                                      rows="2"
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    ></textarea>
+                                  </label>
+                                  <label className="text-sm text-slate-300 md:col-span-2">
+                                    Opening Script
+                                    <textarea
+                                      value=${wizard.openingScript}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, openingScript: e.target.value }))}
+                                      rows="3"
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    ></textarea>
+                                  </label>
+                                </div>
+                              `
+                            : null}
+
+                          ${wizardStep === 3
+                            ? html`
+                                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                  <label className="text-sm text-slate-300 md:col-span-2">
+                                    Value Points (one per line)
+                                    <textarea
+                                      value=${wizard.valuePointsText}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, valuePointsText: e.target.value }))}
+                                      rows="3"
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    ></textarea>
+                                  </label>
+                                  <label className="text-sm text-slate-300 md:col-span-2">
+                                    Knowledge Base (one fact per line)
+                                    <textarea
+                                      value=${wizard.knowledgeBaseText}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, knowledgeBaseText: e.target.value }))}
+                                      rows="4"
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    ></textarea>
+                                  </label>
+                                  <label className="text-sm text-slate-300">
+                                    Allowed Topics (one per line)
+                                    <textarea
+                                      value=${wizard.allowedTopicsText}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, allowedTopicsText: e.target.value }))}
+                                      rows="4"
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    ></textarea>
+                                  </label>
+                                  <label className="text-sm text-slate-300">
+                                    Forbidden Topics (one per line)
+                                    <textarea
+                                      value=${wizard.forbiddenTopicsText}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, forbiddenTopicsText: e.target.value }))}
+                                      rows="4"
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    ></textarea>
+                                  </label>
+                                  <label className="text-sm text-slate-300 md:col-span-2">
+                                    Rebuttals (format: objection => response, one per line)
+                                    <textarea
+                                      value=${wizard.rebuttalsText}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, rebuttalsText: e.target.value }))}
+                                      rows="4"
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    ></textarea>
+                                  </label>
+                                  <label className="text-sm text-slate-300">
+                                    CTA
+                                    <input
+                                      value=${wizard.cta}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, cta: e.target.value }))}
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    />
+                                  </label>
+                                  <label className="text-sm text-slate-300">
+                                    Follow-up Fallback
+                                    <input
+                                      value=${wizard.followUpFallback}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, followUpFallback: e.target.value }))}
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    />
+                                  </label>
+                                </div>
+                              `
+                            : null}
+
+                          ${wizardStep === 4
+                            ? html`
+                                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                  <label className="text-sm text-slate-300 md:col-span-2">
+                                    Twilio Number Assignment (via Vapi phone number)
+                                    <select
+                                      value=${wizard.phoneNumberId}
+                                      onChange=${(e) => setWizard((prev) => ({ ...prev, phoneNumberId: e.target.value }))}
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    >
+                                      <option value="">Select a phone number</option>
+                                      ${phoneNumbers.map((row) => html`
+                                        <option key=${row.id} value=${row.id}>
+                                          ${row.number || row.twilioPhoneNumber || row.name || row.id} (${row.provider || "provider"})
+                                        </option>
+                                      `)}
+                                    </select>
+                                  </label>
+                                  <label className="text-sm text-slate-300 md:col-span-2">
+                                    Phone Number ID (manual override)
+                                    <input
+                                      value=${wizard.phoneNumberId}
+                                      onInput=${(e) => setWizard((prev) => ({ ...prev, phoneNumberId: e.target.value }))}
+                                      placeholder="Paste Vapi phoneNumberId if list is empty"
+                                      className="mt-1 w-full rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2"
+                                    />
+                                  </label>
+                                  <div className="rounded-xl border border-slate-300/20 bg-slate-900/45 p-3 text-sm text-slate-200 md:col-span-2">
+                                    <div><span className="text-slate-400">Agent:</span> ${wizard.agentName}</div>
+                                    <div><span className="text-slate-400">Template:</span> ${wizard.templateName}</div>
+                                    <div><span className="text-slate-400">Voice:</span> ${wizard.voiceProfile}</div>
+                                    <div><span className="text-slate-400">Tone:</span> ${wizard.tonePreset}</div>
+                                    <div><span className="text-slate-400">Phone Number ID:</span> ${wizard.phoneNumberId || "-"}</div>
+                                  </div>
+                                  ${phoneNumbers.length === 0
+                                    ? html`
+                                        <div className="rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100 md:col-span-2">
+                                          No phone numbers loaded. Configure numbers in Vapi dashboard:
+                                          <a className="underline ml-1" target="_blank" rel="noreferrer" href="https://dashboard.vapi.ai/phone-numbers">dashboard.vapi.ai/phone-numbers</a>
+                                        </div>
+                                      `
+                                    : null}
+                                  ${wizardResult
+                                    ? html`
+                                        <div className="rounded-xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-sm text-emerald-100 md:col-span-2">
+                                          Created assistant <strong>${wizardResult.assistantName}</strong> (${wizardResult.assistantId}) and attached number ${wizardResult.phoneNumber || wizardResult.phoneNumberId}.
+                                        </div>
+                                      `
+                                    : null}
+                                </div>
+                              `
+                            : null}
+
+                          <div className="mt-5 flex flex-wrap gap-2">
+                            <button
+                              onClick=${() => setWizardStep((s) => Math.max(1, s - 1))}
+                              disabled=${wizardStep === 1 || wizardLoading}
+                              className="rounded-xl border border-slate-300/20 bg-slate-900/45 px-4 py-2 text-sm disabled:opacity-50"
+                            >
+                              Back
+                            </button>
+                            <button
+                              onClick=${() => setWizardStep((s) => Math.min(4, s + 1))}
+                              disabled=${wizardStep === 4 || wizardLoading}
+                              className="rounded-xl border border-cyan-300/30 bg-cyan-500/12 px-4 py-2 text-sm text-cyan-100 disabled:opacity-50"
+                            >
+                              Next
+                            </button>
+                            <button
+                              onClick=${createAgentFromWizard}
+                              disabled=${wizardLoading}
+                              className="rounded-xl border border-emerald-300/35 bg-emerald-500/15 px-4 py-2 text-sm text-emerald-100 disabled:opacity-50"
+                            >
+                              ${wizardLoading ? "Provisioning..." : "Create Agent + Assign Number"}
+                            </button>
+                          </div>
+                        </section>
+                      `
+                    : null}
+
+                  ${view === "logs"
+                    ? html`
+                        <section className="glass rounded-2xl p-5 shadow-xl">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h2 className="font-display text-xl text-slate-50">Live Runtime Logs</h2>
+                              <p className="mt-1 text-sm text-slate-300">Worker, webhook, dialer, server, and integration logs.</p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 text-sm">
+                              <select value=${logScope} onChange=${(e) => setLogScope(e.target.value)} className="rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2">
+                                <option value="all">all scopes</option>
+                                <option value="worker">worker</option>
+                                <option value="dialer">dialer</option>
+                                <option value="webhook">webhook</option>
+                                <option value="ingest">ingest</option>
+                                <option value="server">server</option>
+                                <option value="ghl">ghl</option>
+                                <option value="agent">agent</option>
+                              </select>
+                              <button onClick=${() => setLogAuto((v) => !v)} className="rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2">
+                                Auto: ${logAuto ? "ON" : "OFF"}
+                              </button>
+                              <button onClick=${() => loadLogs(false).catch((e) => setError(String(e)))} className="rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2">
+                                Refresh
+                              </button>
+                              <button onClick=${exportLogs} className="rounded-xl border border-emerald-300/30 bg-emerald-500/12 px-3 py-2 text-emerald-100">
+                                Export JSON
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="scroll-dark mt-4 max-h-[580px] overflow-auto rounded-xl border border-slate-300/15 bg-slate-950/55 p-3">
+                            ${logs.length === 0
+                              ? html`<div className="text-sm text-slate-400">No logs yet.</div>`
+                              : logs
+                                  .slice()
+                                  .reverse()
+                                  .map(
+                                    (row) => html`
+                                      <div key=${`${row.id}-${row.ts}`} className="mb-2 rounded-xl border border-slate-300/12 bg-slate-900/55 p-3">
+                                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                                          <span className=${`rounded-md border px-2 py-1 ${
+                                            row.level === "error"
+                                              ? "border-rose-300/35 bg-rose-500/15 text-rose-100"
+                                              : "border-emerald-300/35 bg-emerald-500/15 text-emerald-100"
+                                          }`}>${row.level}</span>
+                                          <span className="rounded-md border border-slate-300/18 px-2 py-1 text-slate-200">${row.scope}</span>
+                                          <span className="text-slate-400">${dt(row.at)}</span>
+                                        </div>
+                                        <div className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-100">${row.message}</div>
+                                        ${extractCallId(row.message)
+                                          ? html`
+                                              <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                                                <a
+                                                  href=${`/api/calls/${encodeURIComponent(extractCallId(row.message))}/audio`}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="rounded-md border border-cyan-300/35 bg-cyan-500/12 px-2 py-1 text-cyan-100"
+                                                >
+                                                  Download Audio
+                                                </a>
+                                                <a
+                                                  href=${`/api/calls/${encodeURIComponent(extractCallId(row.message))}/transcript.txt`}
+                                                  className="rounded-md border border-emerald-300/35 bg-emerald-500/12 px-2 py-1 text-emerald-100"
+                                                >
+                                                  Download Transcript
+                                                </a>
+                                              </div>
+                                            `
+                                          : null}
+                                      </div>
+                                    `
+                                  )}
+                          </div>
+                        </section>
+                      `
+                    : null}
+
+                  ${view === "calls"
+                    ? html`
+                        <section className="glass rounded-2xl p-5 shadow-xl">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h2 className="font-display text-xl text-slate-50">Calls, Transcripts, and Audio</h2>
+                              <p className="mt-1 text-sm text-slate-300">Search calls and download transcript/audio artifacts.</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <input
+                                value=${callQuery}
+                                onInput=${(e) => setCallQuery(e.target.value)}
+                                placeholder="Search phone, name, company"
+                                className="rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2 text-sm"
+                              />
+                              <button onClick=${() => loadCalls().catch((e) => setError(String(e)))} className="rounded-xl border border-slate-300/20 bg-slate-900/45 px-3 py-2 text-sm">
+                                Refresh
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="scroll-dark mt-4 overflow-auto rounded-xl border border-slate-300/15 bg-slate-950/55">
+                            <table className="w-full min-w-[980px] text-sm">
+                              <thead>
+                                <tr className="border-b border-slate-300/15 text-left text-xs uppercase tracking-[0.12em] text-slate-400">
+                                  <th className="px-3 py-3">Lead</th>
+                                  <th className="px-3 py-3">Status</th>
+                                  <th className="px-3 py-3">Outcome</th>
+                                  <th className="px-3 py-3">Updated</th>
+                                  <th className="px-3 py-3">Summary</th>
+                                  <th className="px-3 py-3">Artifacts</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${callLoading
+                                  ? html`<tr><td className="px-3 py-5 text-slate-400" colSpan="6">Loading calls...</td></tr>`
+                                  : calls.length === 0
+                                  ? html`<tr><td className="px-3 py-5 text-slate-400" colSpan="6">No call records.</td></tr>`
+                                  : calls.map(
+                                      (call) => html`
+                                        <tr key=${call.id} className="border-b border-slate-300/10 align-top hover:bg-slate-800/20">
+                                          <td className="px-3 py-3">
+                                            <div className="font-medium text-slate-100">${call.firstName || ""} ${call.lastName || ""}</div>
+                                            <div className="text-slate-400">${call.phone}</div>
+                                            <div className="text-xs text-slate-500">${call.company || "-"}</div>
+                                          </td>
+                                          <td className="px-3 py-3 text-slate-200">${call.status || "-"}</td>
+                                          <td className="px-3 py-3 text-slate-200">${call.outcome || "-"}</td>
+                                          <td className="px-3 py-3 text-slate-300">${dt(call.updatedAt)}</td>
+                                          <td className="px-3 py-3 max-w-[260px] text-slate-300">${call.transcriptSummary || "-"}</td>
+                                          <td className="px-3 py-3">
+                                            <div className="flex flex-wrap gap-2">
+                                              <button onClick=${() => loadCallDetail(call.id).catch((e) => setError(String(e)))} className="rounded-lg border border-slate-300/20 px-2 py-1 text-xs">
+                                                View
+                                              </button>
+                                              <a
+                                                href=${`/api/calls/${encodeURIComponent(call.id)}/transcript.txt`}
+                                                className=${`rounded-lg border px-2 py-1 text-xs ${
+                                                  call.hasTranscript
+                                                    ? "border-emerald-300/35 bg-emerald-500/12 text-emerald-100"
+                                                    : "pointer-events-none border-slate-300/20 text-slate-500"
+                                                }`}
+                                              >
+                                                Transcript
+                                              </a>
+                                              <a
+                                                href=${`/api/calls/${encodeURIComponent(call.id)}/audio`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className=${`rounded-lg border px-2 py-1 text-xs ${
+                                                  call.hasAudio
+                                                    ? "border-cyan-300/35 bg-cyan-500/12 text-cyan-100"
+                                                    : "pointer-events-none border-slate-300/20 text-slate-500"
+                                                }`}
+                                              >
+                                                Audio
+                                              </a>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      `
+                                    )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </section>
+                      `
+                    : null}
+                </main>
+              </div>
+            </div>
+
+            ${callSelected
+              ? html`
+                  <div className="fixed inset-0 z-40 bg-black/50" onClick=${() => setCallSelected(null)}>
+                    <div className="glass absolute right-0 top-0 h-full w-full max-w-2xl border-l border-slate-300/20 p-5" onClick=${(e) => e.stopPropagation()}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-display text-2xl text-slate-50">Call Detail</div>
+                          <div className="mt-1 text-sm text-slate-300">${callSelected.phone} · ${callSelected.outcome || "-"}</div>
+                        </div>
+                        <button onClick=${() => setCallSelected(null)} className="rounded-lg border border-slate-300/20 px-3 py-1 text-sm">Close</button>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <a href=${`/api/calls/${encodeURIComponent(callSelected.id)}/transcript.txt`} className="rounded-xl border border-emerald-300/35 bg-emerald-500/12 px-3 py-2 text-sm text-emerald-100">
+                          Download Transcript
+                        </a>
+                        <a href=${`/api/calls/${encodeURIComponent(callSelected.id)}/audio`} target="_blank" rel="noreferrer" className="rounded-xl border border-cyan-300/35 bg-cyan-500/12 px-3 py-2 text-sm text-cyan-100">
+                          Open Audio
+                        </a>
+                      </div>
+
+                      <div className="mt-4 rounded-xl border border-slate-300/15 bg-slate-950/60 p-4">
+                        <div className="text-xs uppercase tracking-[0.12em] text-slate-400">Transcript</div>
+                        <pre className="scroll-dark mt-2 max-h-[70vh] overflow-auto whitespace-pre-wrap break-words text-sm text-slate-100">${
+                          callSelected.transcript || "No transcript available for this call."
+                        }</pre>
+                      </div>
+                    </div>
+                  </div>
+                `
+              : null}
+          </div>
+        `;
+      }
+
+      createRoot(document.getElementById("app")).render(html`<${App} />`);
+    </script>
+  </body>
+</html>

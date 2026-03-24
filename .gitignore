@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.env
+data/state/leads.json
+data/state/templates.json

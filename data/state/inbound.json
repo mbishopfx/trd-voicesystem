@@ -1,0 +1,16 @@
+{
+  "profile": {
+    "assistantId": "",
+    "phoneNumberId": "",
+    "bookingProvider": "calendly",
+    "bookingUrl": "",
+    "voiceProfile": "female",
+    "brandName": "True Rank Digital",
+    "objective": "Qualify inbound lead intent and offer a free strategy meeting.",
+    "maxCallSeconds": 120,
+    "waitForUser": true,
+    "enabled": false,
+    "updatedAt": "2026-03-19T00:00:00.000Z"
+  },
+  "updatedAt": "2026-03-19T00:00:00.000Z"
+}
