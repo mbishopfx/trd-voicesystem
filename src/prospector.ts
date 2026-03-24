@@ -41,8 +41,12 @@ async function geocodeMarket(city: string, state: string): Promise<{ lat: number
   if (!config.googleApiKey) return undefined;
   const address = encodeURIComponent(`${city}, ${state}`);
   const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${address}&key=${encodeURIComponent(config.googleApiKey)}`);
-  if (!res.ok) return undefined;
-  const data = (await res.json()) as { results?: Array<{ geometry?: { location?: { lat?: number; lng?: number } } }> };
+  if (!res.ok) {
+    runtimeInfo('agent', 'prospector geocode request failed', { city, state, status: res.status });
+    return undefined;
+  }
+  const data = (await res.json()) as { status?: string; results?: Array<{ geometry?: { location?: { lat?: number; lng?: number } } }> };
+  runtimeInfo('agent', 'prospector geocode response', { city, state, status: data.status || 'unknown', results: data.results?.length || 0 });
   const loc = data.results?.[0]?.geometry?.location;
   if (!loc || typeof loc.lat !== 'number' || typeof loc.lng !== 'number') return undefined;
   return { lat: loc.lat, lng: loc.lng };
@@ -51,55 +55,80 @@ async function geocodeMarket(city: string, state: string): Promise<{ lat: number
 async function searchPlaces(icp: string, city: string, state: string): Promise<PlaceCandidate[]> {
   if (!config.googleApiKey) return [];
   const location = await geocodeMarket(city, state);
-  const body: Record<string, unknown> = {
-    textQuery: `${icp} in ${city} ${state}`,
-    maxResultCount: 10
-  };
-  if (location) {
-    body.locationBias = {
-      circle: {
-        center: { latitude: location.lat, longitude: location.lng },
-        radius: 25000
-      }
+  const queries = [
+    `${icp} in ${city} ${state}`,
+    `${icp} ${city} ${state}`,
+    `${icp} near ${city} ${state}`,
+    `${icp} ${state}`
+  ];
+  const dedupe = new Map<string, PlaceCandidate>();
+
+  for (const textQuery of queries) {
+    const body: Record<string, unknown> = {
+      textQuery,
+      maxResultCount: 10
     };
+    if (location) {
+      body.locationBias = {
+        circle: {
+          center: { latitude: location.lat, longitude: location.lng },
+          radius: 40000
+        }
+      };
+    }
+
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': config.googleApiKey,
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.googleMapsUri'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      runtimeInfo('agent', 'prospector places request failed', { textQuery, status: res.status });
+      continue;
+    }
+    const data = (await res.json()) as {
+      error?: { message?: string };
+      places?: Array<{
+        displayName?: { text?: string };
+        formattedAddress?: string;
+        nationalPhoneNumber?: string;
+        websiteUri?: string;
+        googleMapsUri?: string;
+      }>;
+    };
+    runtimeInfo('agent', 'prospector places response', { textQuery, count: data.places?.length || 0, error: data.error?.message || '' });
+
+    for (const place of data.places || []) {
+      const candidate: PlaceCandidate = {
+        name: place.displayName?.text || 'Unknown Business',
+        formattedAddress: place.formattedAddress,
+        nationalPhoneNumber: place.nationalPhoneNumber,
+        websiteUri: place.websiteUri,
+        googleMapsUri: place.googleMapsUri
+      };
+      const key = `${candidate.name}|${candidate.formattedAddress || ''}`;
+      if (!dedupe.has(key)) dedupe.set(key, candidate);
+    }
   }
 
-  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Goog-Api-Key': config.googleApiKey,
-      'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.googleMapsUri'
-    },
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) return [];
-  const data = (await res.json()) as {
-    places?: Array<{
-      displayName?: { text?: string };
-      formattedAddress?: string;
-      nationalPhoneNumber?: string;
-      websiteUri?: string;
-      googleMapsUri?: string;
-    }>;
-  };
-
-  return (data.places || []).map((place) => ({
-    name: place.displayName?.text || 'Unknown Business',
-    formattedAddress: place.formattedAddress,
-    nationalPhoneNumber: place.nationalPhoneNumber,
-    websiteUri: place.websiteUri,
-    googleMapsUri: place.googleMapsUri
-  }));
+  return [...dedupe.values()];
 }
 
 async function cseLikelyWebsite(name: string, city: string, state: string): Promise<string | undefined> {
   if (!config.googleApiKey || !config.googleCseId) return undefined;
   const q = encodeURIComponent(`${name} ${city} ${state}`);
   const res = await fetch(`https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(config.googleApiKey)}&cx=${encodeURIComponent(config.googleCseId)}&q=${q}`);
-  if (!res.ok) return undefined;
+  if (!res.ok) {
+    runtimeInfo('agent', 'prospector cse request failed', { name, city, state, status: res.status });
+    return undefined;
+  }
   const data = (await res.json()) as { items?: Array<{ link?: string }> };
+  runtimeInfo('agent', 'prospector cse response', { name, city, state, count: data.items?.length || 0 });
   return data.items?.find((item) => item.link && !item.link.includes('google.com'))?.link;
 }
 
@@ -159,7 +188,7 @@ export async function startProspectorRun(input: ProspectorRunInput): Promise<Pro
     run.discovered = leads.filter((lead) => lead.status === 'queued').length;
     run.status = 'completed';
     run.updatedAt = nowIso();
-    run.notes = `Fetched ${places.length} places; queued ${run.discovered} missing-website candidates.`;
+    run.notes = `Fetched ${places.length} places across fallback Google queries; queued ${run.discovered} missing-website candidates.`;
     runtimeInfo('agent', 'prospector run completed', {
       runId: run.id,
       icp: run.icp,
