@@ -432,6 +432,12 @@
               <button id="prospectorRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh Runs</button>
             </div>
 
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div class="rounded-xl border border-outline-variant/30 bg-white p-4 text-sm"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">Fetched Prospects</div><div id="prospectorFetchedCount" class="mt-2 font-headline text-2xl font-extrabold">0</div></div>
+              <div class="rounded-xl border border-outline-variant/30 bg-white p-4 text-sm"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">Missing Website</div><div id="prospectorMissingCount" class="mt-2 font-headline text-2xl font-extrabold">0</div></div>
+              <div class="rounded-xl border border-outline-variant/30 bg-white p-4 text-sm"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">Website Present</div><div id="prospectorPresentCount" class="mt-2 font-headline text-2xl font-extrabold">0</div></div>
+            </div>
+
             <div id="prospectorResult" class="mt-4 rounded-xl border border-outline-variant/30 bg-white p-4 text-sm text-on-surface">No prospector run started yet.</div>
           </section>
 
@@ -795,15 +801,22 @@
         if (!icp || !city || !stateValue) {
           throw new Error("Enter ICP, city, and state first.");
         }
+        const before = state.leads.length;
         const data = await postJson("/api/prospector/start", { icp, city, state: stateValue });
         const run = data.run || {};
-        const result = document.getElementById("prospectorResult");
-        if (result) {
-          result.innerHTML = `<div class="space-y-1"><p><strong>Run started:</strong> ${escapeHtml(run.id || "n/a")}</p><p><strong>Market:</strong> ${escapeHtml(icp)} in ${escapeHtml(city)}, ${escapeHtml(stateValue)}</p><p><strong>Discovered:</strong> ${escapeHtml(String(run.discovered || 0))} missing-website candidates</p><p class="text-xs text-outline">This run now uses Google geocoding + Google Places, with CSE fallback website verification when needed.</p></div>`;
-        }
         await refreshProspectorRuns();
         await refreshLeads();
         await refreshStatus();
+        const prospectLeads = state.leads.filter((lead) => lead.sourceFile === 'prospector-dashboard' && lead.prospectIcp === icp && lead.prospectCity === city && lead.prospectState === stateValue);
+        const missing = prospectLeads.filter((lead) => lead.prospectWebsiteStatus === 'missing').length;
+        const present = prospectLeads.filter((lead) => lead.prospectWebsiteStatus === 'present').length;
+        setText('prospectorFetchedCount', String(prospectLeads.length));
+        setText('prospectorMissingCount', String(missing));
+        setText('prospectorPresentCount', String(present));
+        const result = document.getElementById("prospectorResult");
+        if (result) {
+          result.innerHTML = `<div class="space-y-1"><p><strong>Run started:</strong> ${escapeHtml(run.id || "n/a")}</p><p><strong>Market:</strong> ${escapeHtml(icp)} in ${escapeHtml(city)}, ${escapeHtml(stateValue)}</p><p><strong>Fetched:</strong> ${escapeHtml(String(prospectLeads.length))} total prospects</p><p><strong>Missing website:</strong> ${escapeHtml(String(missing))} | <strong>Website present:</strong> ${escapeHtml(String(present))}</p><p class="text-xs text-outline">Lead delta in app state: ${escapeHtml(String(state.leads.length - before))}. Next phase is enrichment + generation for only the missing-website subset.</p></div>`;
+        }
         showToast(`Prospector started for ${icp} in ${city}, ${stateValue}`);
       }
 

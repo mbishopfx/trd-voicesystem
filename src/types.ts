@@ -20,6 +20,13 @@ export interface Lead {
   sourceRow: number;
   findings?: string;
   notes?: string;
+  prospectAddress?: string;
+  prospectGoogleMapsUri?: string;
+  prospectWebsiteUri?: string;
+  prospectWebsiteStatus?: 'missing' | 'present' | 'unknown';
+  prospectIcp?: string;
+  prospectCity?: string;
+  prospectState?: string;
   optIn: boolean;
   dnc: boolean;
   status: LeadStatus;

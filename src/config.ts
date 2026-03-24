@@ -1,7 +1,9 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import path from "node:path";
 
 const cwd = process.cwd();
+dotenv.config();
+dotenv.config({ path: path.resolve(cwd, ".env.local"), override: true });
 
 function asInt(name: string, fallback: number): number {
   const raw = process.env[name];
