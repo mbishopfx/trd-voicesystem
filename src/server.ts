@@ -12,6 +12,7 @@ import { hashShort, isMainModule, nowIso } from "./utils.js";
 import { createOutboundCall, type VoiceProfile } from "./vapiClient.js";
 import { fetchSmartListContacts, isGhlConfigured, syncLeadToGhl } from "./integrations/ghl.js";
 import { listProspectorRuns, startProspectorRun } from "./prospector.js";
+import { generateReadyProspectSites } from "./generation.js";
 import { computeAnalyticsSummary } from "./analytics.js";
 import {
   exportRetargetBuckets,
@@ -1674,6 +1675,40 @@ export function createServer() {
 
   app.get("/api/prospector/runs", async (_req: Request, res: Response) => {
     res.json({ ok: true, runs: listProspectorRuns() });
+  });
+
+  app.get("/api/prospector/leads", async (req: Request, res: Response) => {
+    const websiteStatus = safeString(req.query.websiteStatus)?.toLowerCase();
+    const limit = asOptionalInt(req.query.limit, 1, 500) || 200;
+    const leads = await withState((state) => {
+      return Object.values(state.leads)
+        .filter((lead) => lead.sourceFile === "prospector-dashboard")
+        .filter((lead) => !websiteStatus || (lead.prospectWebsiteStatus || "").toLowerCase() === websiteStatus)
+        .sort((a, b) => Date.parse(b.updatedAt || "") - Date.parse(a.updatedAt || ""))
+        .slice(0, limit)
+        .map((lead) => ({
+          id: lead.id,
+          company: lead.company,
+          phone: lead.phone,
+          status: lead.status,
+          prospectWebsiteStatus: lead.prospectWebsiteStatus,
+          prospectCity: lead.prospectCity,
+          prospectState: lead.prospectState,
+          prospectAddress: lead.prospectAddress,
+          prospectWebsiteUri: lead.prospectWebsiteUri,
+          generationStatus: lead.generationStatus,
+          generatedSitePath: lead.generatedSitePath,
+          updatedAt: lead.updatedAt
+        }));
+    });
+    res.json({ ok: true, count: leads.length, leads });
+  });
+
+  app.post("/api/prospector/generate-sites", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const limit = asOptionalInt(body.limit, 1, 100) || 10;
+    const result = await generateReadyProspectSites(limit);
+    res.json({ ok: true, result });
   });
 
   app.post("/api/prospector/start", async (req: Request, res: Response) => {

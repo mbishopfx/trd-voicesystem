@@ -29,6 +29,9 @@ export interface Lead {
   prospectState?: string;
   prospectSummary?: string;
   generationStatus?: 'not_started' | 'ready' | 'generated' | 'deployed';
+  generatedSitePath?: string;
+  generatedScreenshotPath?: string;
+  deployedSiteUrl?: string;
   optIn: boolean;
   dnc: boolean;
   status: LeadStatus;

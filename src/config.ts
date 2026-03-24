@@ -48,6 +48,8 @@ export const config = {
   templateLockPath: path.resolve(cwd, "data", "state", "templates.lock"),
   inboundStatePath: path.resolve(cwd, "data", "state", "inbound.json"),
   inboundLockPath: path.resolve(cwd, "data", "state", "inbound.lock"),
+  generatedSitesDir: path.resolve(cwd, "data", "generated-sites"),
+  generatedScreenshotsDir: path.resolve(cwd, "data", "generated-screenshots"),
 
   campaignName: process.env.CAMPAIGN_NAME?.trim() || "Warm Lead Outreach",
 

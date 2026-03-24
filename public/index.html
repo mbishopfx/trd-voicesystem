@@ -429,6 +429,7 @@
 
             <div class="mt-4 flex flex-wrap gap-3">
               <button id="prospectorStartBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Start Grinding</button>
+              <button id="prospectorGenerateBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Generate Sites</button>
               <button id="prospectorRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh Runs</button>
             </div>
 
@@ -458,6 +459,27 @@
                   </tr>
                 </thead>
                 <tbody id="prospectorRunsRows" class="divide-y divide-outline-variant/10"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="mb-4 flex items-center justify-between">
+              <h3 class="font-headline text-lg font-extrabold text-on-surface">Prospector Lead Feed</h3>
+              <span class="text-xs text-outline">Latest prospects</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-surface-container-low/40">
+                  <tr>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Business</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Website</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Generation</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Phone</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="prospectorLeadRows" class="divide-y divide-outline-variant/10"></tbody>
               </table>
             </div>
           </section>
@@ -788,10 +810,33 @@
         renderRecentLeads(state.leads);
       }
 
+      function renderProspectorLeads(leads) {
+        const root = document.getElementById("prospectorLeadRows");
+        if (!root) return;
+        if (!leads.length) {
+          root.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-sm text-outline">No prospector leads yet.</td></tr>`;
+          return;
+        }
+        root.innerHTML = leads.map((lead) => {
+          const updatedAt = lead.updatedAt ? new Date(lead.updatedAt).toLocaleString() : '--';
+          return `<tr>
+            <td class="px-4 py-3">${escapeHtml(lead.company || lead.id || '--')}</td>
+            <td class="px-4 py-3">${escapeHtml(lead.prospectWebsiteStatus || '--')}</td>
+            <td class="px-4 py-3">${escapeHtml(lead.generationStatus || '--')}</td>
+            <td class="px-4 py-3">${escapeHtml(lead.phone || '--')}</td>
+            <td class="px-4 py-3 text-xs">${escapeHtml(updatedAt)}</td>
+          </tr>`;
+        }).join('');
+      }
+
       async function refreshProspectorRuns() {
-        const data = await getJson("/api/prospector/runs");
-        state.prospectorRuns = data.runs || [];
+        const [runsResp, leadsResp] = await Promise.all([
+          getJson("/api/prospector/runs"),
+          getJson("/api/prospector/leads?limit=100")
+        ]);
+        state.prospectorRuns = runsResp.runs || [];
         renderProspectorRuns(state.prospectorRuns);
+        renderProspectorLeads(leadsResp.leads || []);
       }
 
       async function startProspector() {
@@ -1076,6 +1121,17 @@
           try {
             await refreshProspectorRuns();
             showToast("Prospector runs refreshed.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorGenerateBtn").addEventListener("click", async () => {
+          try {
+            const data = await postJson("/api/prospector/generate-sites", { limit: 10 });
+            await refreshProspectorRuns();
+            await refreshLeads();
+            showToast(`Generated ${data.result?.generated || 0} prospect site(s).`);
           } catch (error) {
             showToast(String(error), true);
           }
