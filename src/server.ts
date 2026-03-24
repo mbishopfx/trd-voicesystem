@@ -18,6 +18,7 @@ import { markProspectReadyForCall } from "./handoff.js";
 import { releaseProspectToQueue } from "./queueRelease.js";
 import { getProspectLeadById } from "./prospectTest.js";
 import { createProspectVisionTemplate } from "./prospectTemplate.js";
+import { createTonyDemoTemplate } from "./tonyDemoTemplate.js";
 import { deployGeneratedProspects } from "./deploy.js";
 import { computeAnalyticsSummary } from "./analytics.js";
 import {
@@ -1774,6 +1775,76 @@ export function createServer() {
     }
   });
 
+  app.post("/api/demo/create-tony-assistant", async (_req: Request, res: Response) => {
+    try {
+      const template = createTonyDemoTemplate();
+      const created = await createVapiAssistantFromTemplate(template);
+      res.json({ ok: true, assistantId: created.id, assistant: created.raw });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.post("/api/demo/test-tony-call", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const toNumber = normalizePhone(safeString(body.toNumber) || '');
+    const assistantId = safeString(body.assistantId) || config.vapiAssistantId;
+    if (!toNumber) {
+      res.status(400).json({ ok: false, error: 'Invalid toNumber' });
+      return;
+    }
+    if (!assistantId) {
+      res.status(400).json({ ok: false, error: 'Missing assistantId' });
+      return;
+    }
+
+    const payload = {
+      assistantId,
+      customer: {
+        number: toNumber,
+        name: 'Tony'
+      },
+      phoneNumber: {
+        twilioPhoneNumber: config.twilioPhoneNumber,
+        twilioAccountSid: config.twilioAccountSid,
+        twilioAuthToken: config.twilioAuthToken
+      },
+      assistantOverrides: {
+        variableValues: {
+          leadFirstName: 'Tony',
+          leadCompany: '',
+          demoOffer: 'This is a short friendly demo of our AI voice agent.',
+          complianceNote: 'Be clear that you are Jarvis, an AI agent from True Rank Digital.'
+        }
+      },
+      metadata: {
+        leadId: 'tony-demo-call',
+        campaign: 'Tony Demo',
+        sourceFile: 'demo-call'
+      }
+    };
+
+    try {
+      const response = await fetch(`${config.vapiBaseUrl}/call`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.vapiApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      const raw = await response.text();
+      if (!response.ok) {
+        res.status(500).json({ ok: false, error: raw });
+        return;
+      }
+      const parsed = JSON.parse(raw) as { id: string };
+      res.json({ ok: true, callId: parsed.id, assistantId });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   app.post("/api/prospector/start", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
     const icp = safeString(body.icp);
@@ -2927,7 +2998,8 @@ export function createServer() {
 
       let sms: Record<string, unknown> | undefined;
       if (sendSms) {
-        const text = `${sourceLead.company || 'Your business'}: we put together a quick vision of what we can do on the fly. Here is the live preview link: ${liveLink}`;
+        const bookingLink = resolvedBookingUrl();
+        const text = `${sourceLead.company || 'Your business'}: we put together a quick vision of what we can do on the fly. Live preview: ${liveLink}${bookingLink ? ` | Book here: ${bookingLink}` : ''}`;
         const sent = await sendSmsMessage({ to: toNumber, body: text });
         sms = { sent: true, sid: sent.sid, status: sent.status };
       }
