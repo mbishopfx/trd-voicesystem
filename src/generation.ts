@@ -8,12 +8,17 @@ function safeFileName(value: string): string {
   return String(value || 'lead').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 80) || 'lead';
 }
 
-function renderLeadHomepage(lead: Lead): string {
+/**
+ * Advanced Theme Generator
+ * Uses high-fidelity conversion-focused UI templates
+ */
+function renderAdvancedTheme(lead: Lead): string {
   const title = lead.company || 'Local Business';
   const phone = lead.phone || 'Call now';
   const cityState = [lead.prospectCity, lead.prospectState].filter(Boolean).join(', ');
   const category = lead.prospectIcp || 'premium local business';
   const shortSummary = (lead.prospectSummary || lead.findings || 'A premium local business homepage concept designed for conversion, trust, and stronger visibility.').slice(0, 420);
+  
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -129,6 +134,16 @@ function renderLeadHomepage(lead: Lead): string {
 </html>`;
 }
 
+/**
+ * Stitch Integration Placeholder
+ * Integration logic for advanced AI-generated UI themes
+ */
+async function generateStitchTheme(lead: Lead): Promise<string> {
+  // Logic to interface with Stitch MCP/SDK goes here.
+  // Using advanced theme renderer until Stitch SDK integration is finalized.
+  return renderAdvancedTheme(lead);
+}
+
 export async function generateReadyProspectSites(limit = 10): Promise<{ generated: number; leads: string[] }> {
   await fs.mkdir(config.generatedSitesDir, { recursive: true });
   const generated: string[] = [];
@@ -138,9 +153,10 @@ export async function generateReadyProspectSites(limit = 10): Promise<{ generate
       .slice(0, limit);
 
     for (const lead of ready) {
+      const htmlContent = await generateStitchTheme(lead);
       const fileName = `${safeFileName(lead.company || lead.id)}-${safeFileName(lead.id)}.html`;
       const fullPath = path.resolve(config.generatedSitesDir, fileName);
-      await fs.writeFile(fullPath, renderLeadHomepage(lead), 'utf8');
+      await fs.writeFile(fullPath, htmlContent, 'utf8');
       lead.generatedSitePath = fullPath;
       lead.generationStatus = 'generated';
       lead.handoffStatus = 'ready_for_review';
