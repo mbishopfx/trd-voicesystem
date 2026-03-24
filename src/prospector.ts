@@ -5,6 +5,33 @@ import { nowIso } from './utils.js';
 import { runtimeInfo } from './runtimeLogs.js';
 import type { Lead } from './types.js';
 
+async function geminiSummary(input: { icp: string; city: string; state: string; business: string; address?: string; websiteStatus: string }): Promise<string | undefined> {
+  if (!config.geminiApiKey) return undefined;
+  const prompt = [
+    'Write a concise 500-800 word homepage planning summary for this local business prospect.',
+    `Business: ${input.business}`,
+    `ICP: ${input.icp}`,
+    `Market: ${input.city}, ${input.state}`,
+    `Address: ${input.address || 'unknown'}`,
+    `Website status: ${input.websiteStatus}`,
+    'Cover likely services, trust signals, CTA structure, conversion strategy, and local positioning.',
+    'Return plain text only.'
+  ].join('\n');
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(config.geminiModel)}:generateContent?key=${encodeURIComponent(config.geminiApiKey)}`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      generationConfig: { temperature: 0.4 },
+      contents: [{ role: 'user', parts: [{ text: prompt }] }]
+    })
+  });
+  if (!response.ok) return undefined;
+  const payload = (await response.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  return payload.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('\n').trim() || undefined;
+}
+
 export interface ProspectorRunInput {
   icp: string;
   city: string;
@@ -135,6 +162,10 @@ async function cseLikelyWebsite(name: string, city: string, state: string): Prom
 async function buildLead(input: ProspectorRunInput, place: PlaceCandidate, idx: number): Promise<Lead> {
   const createdAt = nowIso();
   const fallbackWebsite = place.websiteUri || (await cseLikelyWebsite(place.name, input.city, input.state));
+  const websiteStatus = fallbackWebsite ? 'present' : 'missing';
+  const summary = websiteStatus === 'missing'
+    ? await geminiSummary({ icp: input.icp, city: input.city, state: input.state, business: place.name, address: place.formattedAddress, websiteStatus })
+    : undefined;
   const id = `prospector-${slug(input.icp)}-${slug(input.city)}-${slug(input.state)}-${idx}`;
   return {
     id,
@@ -152,10 +183,12 @@ async function buildLead(input: ProspectorRunInput, place: PlaceCandidate, idx: 
     prospectAddress: place.formattedAddress,
     prospectGoogleMapsUri: place.googleMapsUri,
     prospectWebsiteUri: fallbackWebsite,
-    prospectWebsiteStatus: fallbackWebsite ? 'present' : 'missing',
+    prospectWebsiteStatus: websiteStatus,
     prospectIcp: input.icp,
     prospectCity: input.city,
     prospectState: input.state,
+    prospectSummary: summary,
+    generationStatus: websiteStatus === 'missing' ? 'ready' : 'not_started',
     optIn: false,
     dnc: false,
     status: fallbackWebsite ? 'blocked' : 'queued',
