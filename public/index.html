@@ -431,6 +431,8 @@
               <button id="prospectorStartBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Start Grinding</button>
               <button id="prospectorGenerateBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Generate Sites</button>
               <button id="prospectorScreenshotBtn" class="rounded-xl border border-tertiary/35 bg-tertiary/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-tertiary">Generate Screenshots</button>
+              <button id="prospectorReadyBtn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Mark Ready For Call</button>
+              <button id="prospectorQueueBtn" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-700">Release To Queue</button>
               <button id="prospectorRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh Runs</button>
             </div>
 
@@ -1146,6 +1148,34 @@
             await refreshProspectorRuns();
             await refreshLeads();
             showToast(`Generated ${data.result?.generated || 0} prospect screenshot(s).`);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorReadyBtn").addEventListener("click", async () => {
+          try {
+            const leads = await getJson("/api/prospector/leads?limit=100");
+            const candidate = (leads.leads || []).find((lead) => lead.generatedSitePath && lead.generatedScreenshotPath && lead.handoffStatus === 'ready_for_review');
+            if (!candidate) throw new Error('No generated prospect is ready for call handoff yet.');
+            await postJson("/api/prospector/ready-for-call", { leadId: candidate.id });
+            await refreshProspectorRuns();
+            await refreshLeads();
+            showToast(`Prospect ${candidate.id} marked ready for call.`);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorQueueBtn").addEventListener("click", async () => {
+          try {
+            const leads = await getJson("/api/prospector/leads?limit=100");
+            const candidate = (leads.leads || []).find((lead) => lead.handoffStatus === 'ready_for_call');
+            if (!candidate) throw new Error('No prospect is currently marked ready for call.');
+            await postJson("/api/prospector/release-to-queue", { leadId: candidate.id });
+            await refreshProspectorRuns();
+            await refreshLeads();
+            showToast(`Prospect ${candidate.id} released to queue.`);
           } catch (error) {
             showToast(String(error), true);
           }

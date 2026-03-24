@@ -14,6 +14,8 @@ import { fetchSmartListContacts, isGhlConfigured, syncLeadToGhl } from "./integr
 import { listProspectorRuns, startProspectorRun } from "./prospector.js";
 import { generateReadyProspectSites } from "./generation.js";
 import { createProspectScreenshots } from "./screenshots.js";
+import { markProspectReadyForCall } from "./handoff.js";
+import { releaseProspectToQueue } from "./queueRelease.js";
 import { computeAnalyticsSummary } from "./analytics.js";
 import {
   exportRetargetBuckets,
@@ -1718,6 +1720,36 @@ export function createServer() {
     const body = (req.body || {}) as Record<string, unknown>;
     const limit = asOptionalInt(body.limit, 1, 100) || 10;
     const result = await createProspectScreenshots(limit);
+    res.json({ ok: true, result });
+  });
+
+  app.post("/api/prospector/ready-for-call", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const leadId = safeString(body.leadId);
+    if (!leadId) {
+      res.status(400).json({ ok: false, error: "leadId is required" });
+      return;
+    }
+    const result = await markProspectReadyForCall(leadId);
+    if (!result.updated) {
+      res.status(400).json({ ok: false, error: result.reason || 'Could not update lead' });
+      return;
+    }
+    res.json({ ok: true, result });
+  });
+
+  app.post("/api/prospector/release-to-queue", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const leadId = safeString(body.leadId);
+    if (!leadId) {
+      res.status(400).json({ ok: false, error: "leadId is required" });
+      return;
+    }
+    const result = await releaseProspectToQueue(leadId);
+    if (!result.updated) {
+      res.status(400).json({ ok: false, error: result.reason || 'Could not release lead' });
+      return;
+    }
     res.json({ ok: true, result });
   });
 

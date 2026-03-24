@@ -33,6 +33,7 @@ export interface Lead {
   generatedScreenshotPath?: string;
   deployedSiteUrl?: string;
   handoffStatus?: 'draft' | 'ready_for_review' | 'ready_for_call' | 'sent_to_queue';
+  prospectAutoDialApproved?: boolean;
   optIn: boolean;
   dnc: boolean;
   status: LeadStatus;
