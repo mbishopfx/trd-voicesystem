@@ -23,31 +23,106 @@ export interface ProspectorRun {
   notes?: string;
 }
 
+interface PlaceCandidate {
+  name: string;
+  formattedAddress?: string;
+  nationalPhoneNumber?: string;
+  websiteUri?: string;
+  googleMapsUri?: string;
+}
+
 const runs: ProspectorRun[] = [];
 
 function slug(value: string): string {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60);
 }
 
-function buildLead(input: ProspectorRunInput, idx: number): Lead {
+async function geocodeMarket(city: string, state: string): Promise<{ lat: number; lng: number } | undefined> {
+  if (!config.googleApiKey) return undefined;
+  const address = encodeURIComponent(`${city}, ${state}`);
+  const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${address}&key=${encodeURIComponent(config.googleApiKey)}`);
+  if (!res.ok) return undefined;
+  const data = (await res.json()) as { results?: Array<{ geometry?: { location?: { lat?: number; lng?: number } } }> };
+  const loc = data.results?.[0]?.geometry?.location;
+  if (!loc || typeof loc.lat !== 'number' || typeof loc.lng !== 'number') return undefined;
+  return { lat: loc.lat, lng: loc.lng };
+}
+
+async function searchPlaces(icp: string, city: string, state: string): Promise<PlaceCandidate[]> {
+  if (!config.googleApiKey) return [];
+  const location = await geocodeMarket(city, state);
+  const body: Record<string, unknown> = {
+    textQuery: `${icp} in ${city} ${state}`,
+    maxResultCount: 10
+  };
+  if (location) {
+    body.locationBias = {
+      circle: {
+        center: { latitude: location.lat, longitude: location.lng },
+        radius: 25000
+      }
+    };
+  }
+
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': config.googleApiKey,
+      'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.googleMapsUri'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    places?: Array<{
+      displayName?: { text?: string };
+      formattedAddress?: string;
+      nationalPhoneNumber?: string;
+      websiteUri?: string;
+      googleMapsUri?: string;
+    }>;
+  };
+
+  return (data.places || []).map((place) => ({
+    name: place.displayName?.text || 'Unknown Business',
+    formattedAddress: place.formattedAddress,
+    nationalPhoneNumber: place.nationalPhoneNumber,
+    websiteUri: place.websiteUri,
+    googleMapsUri: place.googleMapsUri
+  }));
+}
+
+async function cseLikelyWebsite(name: string, city: string, state: string): Promise<string | undefined> {
+  if (!config.googleApiKey || !config.googleCseId) return undefined;
+  const q = encodeURIComponent(`${name} ${city} ${state}`);
+  const res = await fetch(`https://www.googleapis.com/customsearch/v1?key=${encodeURIComponent(config.googleApiKey)}&cx=${encodeURIComponent(config.googleCseId)}&q=${q}`);
+  if (!res.ok) return undefined;
+  const data = (await res.json()) as { items?: Array<{ link?: string }> };
+  return data.items?.find((item) => item.link && !item.link.includes('google.com'))?.link;
+}
+
+async function buildLead(input: ProspectorRunInput, place: PlaceCandidate, idx: number): Promise<Lead> {
   const createdAt = nowIso();
+  const fallbackWebsite = place.websiteUri || (await cseLikelyWebsite(place.name, input.city, input.state));
   const id = `prospector-${slug(input.icp)}-${slug(input.city)}-${slug(input.state)}-${idx}`;
   return {
     id,
-    phone: '',
+    phone: place.nationalPhoneNumber || '',
     firstName: undefined,
     lastName: undefined,
-    company: `${input.city} ${input.icp} Prospect ${idx}`,
+    company: place.name,
     email: undefined,
     timezone: config.defaultTimezone,
     campaign: `Prospector ${input.icp} ${input.city} ${input.state}`,
     sourceFile: 'prospector-dashboard',
     sourceRow: idx,
-    findings: `Prospected lead candidate for ${input.icp} in ${input.city}, ${input.state}. Needs live enrichment and qualification for website/demo generation flow.`,
-    notes: 'Generated from dashboard prospector run',
+    findings: `Address: ${place.formattedAddress || 'n/a'} | Maps: ${place.googleMapsUri || 'n/a'} | Website: ${fallbackWebsite || 'missing'}`,
+    notes: fallbackWebsite ? 'Prospected from Google Places/CSE. Website detected.' : 'Prospected from Google Places. Missing website candidate.',
     optIn: false,
     dnc: false,
-    status: 'blocked',
+    status: fallbackWebsite ? 'blocked' : 'queued',
     attempts: 0,
     createdAt,
     updatedAt: createdAt,
@@ -65,30 +140,41 @@ export async function startProspectorRun(input: ProspectorRunInput): Promise<Pro
     createdAt,
     updatedAt: createdAt,
     discovered: 0,
-    notes: 'Initial scaffold run created from dashboard.'
+    notes: 'Google-powered prospecting run created from dashboard.'
   };
   runs.unshift(run);
 
-  const seeds = [1, 2, 3].map((idx) => buildLead(input, idx));
-  await withState((state) => {
-    for (const lead of seeds) {
-      state.leads[lead.id] = lead;
-    }
-    state.updatedAt = nowIso();
-    return state;
-  });
+  try {
+    const places = await searchPlaces(input.icp, input.city, input.state);
+    const leads = await Promise.all(places.map((place, idx) => buildLead(input, place, idx + 1)));
 
-  run.discovered = seeds.length;
-  run.status = 'completed';
-  run.updatedAt = nowIso();
-  runtimeInfo('agent', 'prospector run completed', {
-    runId: run.id,
-    icp: run.icp,
-    city: run.city,
-    state: run.state,
-    discovered: run.discovered
-  });
-  return run;
+    await withState((state) => {
+      for (const lead of leads) {
+        state.leads[lead.id] = lead;
+      }
+      state.updatedAt = nowIso();
+      return state;
+    });
+
+    run.discovered = leads.filter((lead) => lead.status === 'queued').length;
+    run.status = 'completed';
+    run.updatedAt = nowIso();
+    run.notes = `Fetched ${places.length} places; queued ${run.discovered} missing-website candidates.`;
+    runtimeInfo('agent', 'prospector run completed', {
+      runId: run.id,
+      icp: run.icp,
+      city: run.city,
+      state: run.state,
+      discovered: run.discovered,
+      fetched: places.length
+    });
+    return run;
+  } catch (error) {
+    run.status = 'failed';
+    run.updatedAt = nowIso();
+    run.notes = String(error);
+    throw error;
+  }
 }
 
 export function listProspectorRuns(): ProspectorRun[] {

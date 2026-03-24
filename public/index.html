@@ -799,7 +799,7 @@
         const run = data.run || {};
         const result = document.getElementById("prospectorResult");
         if (result) {
-          result.innerHTML = `<div class="space-y-1"><p><strong>Run started:</strong> ${escapeHtml(run.id || "n/a")}</p><p><strong>Market:</strong> ${escapeHtml(icp)} in ${escapeHtml(city)}, ${escapeHtml(stateValue)}</p><p><strong>Discovered:</strong> ${escapeHtml(String(run.discovered || 0))} candidates</p><p class="text-xs text-outline">This is the first in-app scaffold. Next step is replacing seeded candidates with live Gemini/Maps/Stitch discovery.</p></div>`;
+          result.innerHTML = `<div class="space-y-1"><p><strong>Run started:</strong> ${escapeHtml(run.id || "n/a")}</p><p><strong>Market:</strong> ${escapeHtml(icp)} in ${escapeHtml(city)}, ${escapeHtml(stateValue)}</p><p><strong>Discovered:</strong> ${escapeHtml(String(run.discovered || 0))} missing-website candidates</p><p class="text-xs text-outline">This run now uses Google geocoding + Google Places, with CSE fallback website verification when needed.</p></div>`;
         }
         await refreshProspectorRuns();
         await refreshLeads();
