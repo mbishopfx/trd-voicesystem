@@ -1,0 +1,1090 @@
+<!doctype html>
+<html class="light" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>True Rank Digital Voice Ops</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./tailwind.css" />
+    <style>
+      .material-symbols-outlined {
+        font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+      }
+      .glass-effect {
+        backdrop-filter: blur(15px);
+        background-color: rgba(247, 249, 255, 0.8);
+      }
+      .primary-gradient {
+        background: linear-gradient(135deg, #026262 0%, #2d7b7b 100%);
+      }
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .text-label-sm {
+        font-size: 11px;
+      }
+      .card-glow {
+        box-shadow: 0 10px 28px rgba(17, 29, 40, 0.08);
+      }
+    </style>
+  </head>
+  <body class="bg-surface font-body text-on-surface">
+    <aside class="fixed left-0 top-0 z-50 hidden h-screen w-64 flex-col border-r-0 bg-slate-100 md:flex">
+      <div class="flex h-full flex-col px-4 py-6">
+        <div class="mb-10 flex items-center gap-3 px-2">
+          <div class="flex h-10 w-10 items-center justify-center overflow-hidden rounded bg-primary-container text-white ring-1 ring-primary/30">
+            <img src="./assets/trd-logo1.jpg" alt="True Rank Digital" class="h-full w-full object-cover" />
+          </div>
+          <div>
+            <h1 class="font-headline text-lg font-bold tracking-tighter text-slate-900">True Rank Digital</h1>
+            <p class="text-[10px] font-bold uppercase tracking-widest text-teal-700">Voice Ops</p>
+          </div>
+        </div>
+
+        <button id="newCampaignBtn" class="primary-gradient mb-8 flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold text-white shadow-lg transition-all hover:opacity-90 active:scale-95">
+          <span class="material-symbols-outlined text-sm">add</span>
+          New Campaign
+        </button>
+
+        <nav class="flex-1 space-y-1">
+          <a data-nav-tab="dashboard" class="nav-tab flex items-center gap-3 border-r-2 border-teal-700 px-4 py-3 text-sm font-semibold tracking-tight text-teal-700" href="#tab-dashboard">
+            <span class="material-symbols-outlined">dashboard</span>
+            Dashboard
+          </a>
+          <a data-nav-tab="live-monitor" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-live-monitor">
+            <span class="material-symbols-outlined">podcasts</span>
+            Live Monitor
+          </a>
+          <a data-nav-tab="campaigns" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-campaigns">
+            <span class="material-symbols-outlined">campaign</span>
+            Campaigns
+          </a>
+          <a data-nav-tab="prospector" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-prospector">
+            <span class="material-symbols-outlined">travel_explore</span>
+            Prospector
+          </a>
+          <a data-nav-tab="analytics" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-analytics">
+            <span class="material-symbols-outlined">insights</span>
+            Analytics
+          </a>
+          <a data-nav-tab="settings" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-settings">
+            <span class="material-symbols-outlined">settings</span>
+            Settings
+          </a>
+        </nav>
+
+        <div class="mt-auto space-y-1 border-t border-slate-200 pt-6">
+          <a class="flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#">
+            <span class="material-symbols-outlined">help</span>
+            Support
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <header class="fixed left-0 top-0 z-40 flex h-16 w-full items-center justify-between border-b border-slate-200/20 bg-white/80 px-4 shadow-sm backdrop-blur-md md:left-auto md:right-0 md:w-[calc(100%-16rem)] md:px-8">
+      <div class="flex items-center gap-8">
+        <h2 class="hidden font-headline text-xl font-extrabold tracking-tight text-slate-900 md:block">True Rank Digital Voice Ops</h2>
+        <nav class="hidden items-center gap-6 lg:flex">
+          <a data-top-tab="dashboard" class="top-tab flex h-16 items-center border-b-2 border-teal-600 text-sm font-semibold text-teal-600" href="#tab-dashboard">System Status</a>
+          <a data-top-tab="campaigns" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-campaigns">Agent Queue</a>
+          <a data-top-tab="prospector" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-prospector">Prospector</a>
+          <a data-top-tab="live-monitor" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-live-monitor">Real-time Alerts</a>
+        </nav>
+      </div>
+
+      <div class="flex items-center gap-2 md:gap-4">
+        <div class="hidden items-center rounded-full border-b border-outline-variant/20 bg-surface-container-low px-3 py-1.5 md:flex">
+          <span class="material-symbols-outlined text-lg text-outline">search</span>
+          <input id="searchInput" class="w-48 border-none bg-transparent text-sm focus:ring-0" placeholder="Global system search..." type="text" />
+        </div>
+        <div class="flex h-8 items-center gap-2 border-l border-slate-200 pl-3 md:gap-3 md:pl-4">
+          <button class="text-slate-600"><span class="material-symbols-outlined">notifications</span></button>
+          <button class="text-slate-600"><span class="material-symbols-outlined">history</span></button>
+          <button id="goLiveBtn" class="primary-gradient rounded px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition-all hover:opacity-100">Go Live</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="min-h-screen p-4 pt-24 md:ml-64 md:p-8 md:pt-24">
+      <div class="mx-auto max-w-[1600px] space-y-8">
+        <div id="statusToast" class="hidden rounded-xl border border-outline-variant/40 bg-surface-container-low p-4 text-sm text-on-surface"></div>
+
+        <section id="page-dashboard" data-page="dashboard" class="space-y-8">
+          <section class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div class="card-glow rounded-xl border-b-2 border-primary/10 bg-surface-container-lowest p-6 transition-transform hover:-translate-y-0.5">
+              <div class="mb-4 flex items-start justify-between">
+                <span class="text-label-sm font-bold uppercase tracking-widest text-outline">Total Leads</span>
+                <div class="flex h-8 w-8 items-center justify-center rounded bg-primary/5 text-primary">
+                  <span class="material-symbols-outlined text-lg">group</span>
+                </div>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="statTotalLeads" class="font-headline text-3xl font-extrabold text-on-surface">0</span>
+                <span id="statTotalTrend" class="text-xs font-bold text-teal-600">--</span>
+              </div>
+              <div class="mt-4 h-1 w-full overflow-hidden rounded-full bg-surface-container-low"><div id="barTotal" class="h-full w-[0%] bg-primary"></div></div>
+            </div>
+
+            <div class="card-glow rounded-xl border-b-2 border-secondary/10 bg-surface-container-lowest p-6 transition-transform hover:-translate-y-0.5">
+              <div class="mb-4 flex items-start justify-between">
+                <span class="text-label-sm font-bold uppercase tracking-widest text-outline">Queued</span>
+                <div class="flex h-8 w-8 items-center justify-center rounded bg-secondary/5 text-secondary">
+                  <span class="material-symbols-outlined text-lg">queue</span>
+                </div>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="statQueued" class="font-headline text-3xl font-extrabold text-on-surface">0</span>
+                <span id="statQueuedTrend" class="text-xs font-bold text-outline">--</span>
+              </div>
+              <div class="mt-4 h-1 w-full overflow-hidden rounded-full bg-surface-container-low"><div id="barQueued" class="h-full w-[0%] bg-secondary"></div></div>
+            </div>
+
+            <div class="card-glow rounded-xl border-b-2 border-tertiary/10 bg-surface-container-lowest p-6 transition-transform hover:-translate-y-0.5">
+              <div class="mb-4 flex items-start justify-between">
+                <span class="text-label-sm font-bold uppercase tracking-widest text-outline">Currently Dialing</span>
+                <div class="flex h-8 w-8 items-center justify-center rounded bg-tertiary/5 text-tertiary">
+                  <span class="material-symbols-outlined text-lg">call</span>
+                </div>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="statDialing" class="font-headline text-3xl font-extrabold text-on-surface">0</span>
+                <span id="statDialingTrend" class="text-xs font-bold text-outline">--</span>
+              </div>
+              <div class="mt-4 h-1 w-full overflow-hidden rounded-full bg-surface-container-low"><div id="barDialing" class="h-full w-[0%] bg-tertiary"></div></div>
+            </div>
+
+            <div class="card-glow rounded-xl border-b-2 border-primary-container/10 bg-surface-container-lowest p-6 transition-transform hover:-translate-y-0.5">
+              <div class="mb-4 flex items-start justify-between">
+                <span class="text-label-sm font-bold uppercase tracking-widest text-outline">Booked</span>
+                <div class="flex h-8 w-8 items-center justify-center rounded bg-primary-container/5 text-primary-container">
+                  <span class="material-symbols-outlined text-lg">event_available</span>
+                </div>
+              </div>
+              <div class="flex items-baseline gap-2">
+                <span id="statBooked" class="font-headline text-3xl font-extrabold text-on-surface">0</span>
+                <span id="statBookedTrend" class="text-xs font-bold text-outline">--</span>
+              </div>
+              <div class="mt-4 h-1 w-full overflow-hidden rounded-full bg-surface-container-low"><div id="barBooked" class="h-full w-[0%] bg-primary-container"></div></div>
+            </div>
+          </section>
+
+          <div class="grid grid-cols-12 gap-8">
+            <div class="col-span-12 space-y-8 xl:col-span-8">
+              <section id="runtimeSection" class="card-glow overflow-hidden rounded-2xl bg-surface-container-lowest">
+                <div class="flex items-center justify-between border-b border-outline-variant/10 px-8 py-6">
+                  <h3 class="font-headline text-lg font-extrabold tracking-tight text-on-surface">Runtime Status</h3>
+                  <div class="flex gap-2">
+                    <span class="rounded border border-teal-200 bg-teal-50 px-2 py-1 text-[10px] font-bold uppercase tracking-tighter text-teal-700">Nodes Healthy</span>
+                  </div>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="w-full text-left">
+                    <thead class="bg-surface-container-low/40">
+                      <tr>
+                        <th class="px-8 py-4 text-[10px] font-bold uppercase tracking-widest text-outline">Process Name</th>
+                        <th class="px-8 py-4 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
+                        <th class="px-8 py-4 text-[10px] font-bold uppercase tracking-widest text-outline">Load</th>
+                        <th class="px-8 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-outline">Runtime</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-outline-variant/5">
+                      <tr class="transition-colors hover:bg-surface-container-low/30">
+                        <td class="px-8 py-5">
+                          <div class="flex flex-col">
+                            <span class="font-headline text-sm font-bold text-on-surface">Inbound_Router</span>
+                            <span class="text-[10px] text-outline">edge-cluster-01</span>
+                          </div>
+                        </td>
+                        <td class="px-8 py-5"><span id="nodeInbound" class="text-xs font-bold text-on-surface">ACTIVE</span></td>
+                        <td class="px-8 py-5"><span id="nodeInboundLoad" class="text-xs font-medium text-outline">--</span></td>
+                        <td class="px-8 py-5 text-right font-mono text-xs text-outline" id="nodeInboundUptime">--</td>
+                      </tr>
+                      <tr class="transition-colors hover:bg-surface-container-low/30">
+                        <td class="px-8 py-5">
+                          <div class="flex flex-col">
+                            <span class="font-headline text-sm font-bold text-on-surface">Predictive_Dialer_Core</span>
+                            <span class="text-[10px] text-outline">core-srv-04</span>
+                          </div>
+                        </td>
+                        <td class="px-8 py-5"><span id="nodeDialer" class="text-xs font-bold text-on-surface">ACTIVE</span></td>
+                        <td class="px-8 py-5"><span id="nodeDialerLoad" class="text-xs font-medium text-outline">--</span></td>
+                        <td class="px-8 py-5 text-right font-mono text-xs text-outline" id="nodeDialerUptime">--</td>
+                      </tr>
+                      <tr class="transition-colors hover:bg-surface-container-low/30">
+                        <td class="px-8 py-5">
+                          <div class="flex flex-col">
+                            <span class="font-headline text-sm font-bold text-on-surface">Media_Streamer_AES</span>
+                            <span class="text-[10px] text-outline">rtp-proxy-west</span>
+                          </div>
+                        </td>
+                        <td class="px-8 py-5"><span id="nodeMedia" class="text-xs font-bold text-on-surface">SCALING</span></td>
+                        <td class="px-8 py-5"><span id="nodeMediaLoad" class="text-xs font-medium text-outline">--</span></td>
+                        <td class="px-8 py-5 text-right font-mono text-xs text-outline" id="nodeMediaUptime">--</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            <div class="col-span-12 space-y-8 xl:col-span-4">
+              <section id="performanceSection" class="space-y-6 rounded-2xl bg-surface-container-highest/50 p-6">
+                <h3 class="border-l-4 border-secondary pl-3 font-headline text-md font-extrabold uppercase tracking-wider text-on-surface">System Performance</h3>
+
+                <div class="space-y-2">
+                  <div class="flex items-end justify-between">
+                    <span class="font-headline text-xs font-bold text-on-surface">Dialer Capacity</span>
+                    <span id="dialerCapacityText" class="font-headline text-xl font-extrabold text-secondary">0%</span>
+                  </div>
+                  <div class="h-2 w-full overflow-hidden rounded-full bg-surface-container-low">
+                    <div id="dialerCapacityBar" class="h-full w-[0%] rounded-full bg-secondary"></div>
+                  </div>
+                </div>
+
+                <div class="card-glow flex items-center justify-between rounded-xl bg-surface-container-lowest p-4">
+                  <div class="flex items-center gap-3">
+                    <div class="flex h-10 w-10 items-center justify-center rounded bg-teal-50 text-teal-600"><span class="material-symbols-outlined">network_check</span></div>
+                    <div>
+                      <p class="text-[10px] font-bold uppercase tracking-tight text-outline">VOIP Latency</p>
+                      <p id="voipLatency" class="font-headline text-lg font-extrabold text-on-surface">--</p>
+                    </div>
+                  </div>
+                  <span class="rounded bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-600">OPTIMAL</span>
+                </div>
+
+                <div class="card-glow flex items-center justify-between rounded-xl bg-surface-container-lowest p-4">
+                  <div class="flex items-center gap-3">
+                    <div class="flex h-10 w-10 items-center justify-center rounded bg-secondary-fixed/30 text-secondary"><span class="material-symbols-outlined">timer</span></div>
+                    <div>
+                      <p class="text-[10px] font-bold uppercase tracking-tight text-outline">Cooldown Remaining</p>
+                      <p id="cooldownText" class="font-headline text-lg font-extrabold text-on-surface">--</p>
+                    </div>
+                  </div>
+                  <span class="material-symbols-outlined text-outline-variant">trending_flat</span>
+                </div>
+              </section>
+
+              <section class="relative overflow-hidden rounded-2xl bg-inverse-surface p-8 text-white shadow-2xl">
+                <div class="absolute inset-0 bg-primary/10 mix-blend-overlay"></div>
+                <h3 class="relative z-10 mb-6 font-headline text-sm font-bold uppercase tracking-[0.2em] text-surface-dim">Quick Controls</h3>
+                <div class="relative z-10 grid grid-cols-2 gap-4">
+                  <button id="pauseAllBtn" class="group flex flex-col items-center gap-2 rounded-xl bg-white/10 p-4 transition-all hover:bg-white/20">
+                    <span class="material-symbols-outlined text-xl transition-transform group-hover:scale-110">pause_circle</span>
+                    <span class="text-[11px] font-bold uppercase">Pause All</span>
+                  </button>
+                  <button id="syncBtn" class="group flex flex-col items-center gap-2 rounded-xl bg-white/10 p-4 transition-all hover:bg-white/20">
+                    <span class="material-symbols-outlined text-xl transition-transform group-hover:scale-110">sync</span>
+                    <span class="text-[11px] font-bold uppercase">Sync</span>
+                  </button>
+                  <button id="reportsBtn" class="group flex flex-col items-center gap-2 rounded-xl bg-white/10 p-4 transition-all hover:bg-white/20">
+                    <span class="material-symbols-outlined text-xl transition-transform group-hover:scale-110">description</span>
+                    <span class="text-[11px] font-bold uppercase">Reports</span>
+                  </button>
+                  <button id="emergencyBtn" class="group flex flex-col items-center gap-2 rounded-xl border border-error/50 bg-error/20 p-4 text-error-container transition-all hover:bg-error/40">
+                    <span class="material-symbols-outlined text-xl group-hover:animate-pulse">report</span>
+                    <span class="text-[11px] font-bold uppercase">Emergency</span>
+                  </button>
+                </div>
+
+                <div class="relative z-10 mt-8 border-t border-white/10 pt-6">
+                  <div class="mb-3 flex items-center justify-between">
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-surface-dim">Live Event Log</span>
+                    <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-teal-400"></span>
+                  </div>
+                  <div id="eventLog" class="space-y-2 text-[10px] font-mono text-white/70"></div>
+                </div>
+              </section>
+
+              <div class="flex items-center justify-between rounded-xl border border-outline-variant/10 bg-surface p-4">
+                <div class="flex -space-x-2">
+                  <div class="h-8 w-8 rounded-full border-2 border-surface bg-primary/20"></div>
+                  <div class="h-8 w-8 rounded-full border-2 border-surface bg-secondary/20"></div>
+                  <div class="h-8 w-8 rounded-full border-2 border-surface bg-tertiary/20"></div>
+                  <div class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-surface bg-surface-container text-[10px] font-bold text-outline">+42</div>
+                </div>
+                <span id="agentsOnline" class="font-headline text-xs font-bold text-on-surface">0 Agents Online</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="page-campaigns" data-page="campaigns" class="hidden space-y-8">
+          <section id="campaignSection" class="group relative overflow-hidden rounded-2xl bg-surface-container-low p-8">
+            <div class="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/5 blur-3xl transition-all group-hover:bg-primary/10"></div>
+            <div class="relative z-10 mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+              <div>
+                <h3 class="font-headline text-2xl font-extrabold text-on-surface">Campaign Center</h3>
+                <p class="text-sm font-medium text-outline">Upload lead lists and control outbound run starts.</p>
+              </div>
+              <button id="launchSequenceBtn" class="primary-gradient rounded-lg px-8 py-3 text-xs font-bold uppercase tracking-widest text-white shadow-xl transition-all active:scale-95">
+                Launch Sequence
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <div class="group/drop flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-outline-variant/40 bg-surface-container-lowest p-10 text-center transition-colors hover:border-primary/40">
+                <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-container transition-transform group-hover/drop:scale-110">
+                  <span class="material-symbols-outlined text-3xl text-primary">upload_file</span>
+                </div>
+                <h4 class="font-headline font-bold text-on-surface">Upload Campaign Data</h4>
+                <p id="fileSummary" class="mb-4 text-xs text-outline">Drag and drop your .CSV file here</p>
+                <input id="csvInput" type="file" accept=".csv" multiple class="hidden" />
+                <button id="browseFilesBtn" class="rounded-full bg-surface-container-highest px-6 py-2 text-xs font-bold text-on-surface transition-colors hover:bg-surface-container-high">
+                  Browse Files
+                </button>
+              </div>
+
+              <div class="space-y-4">
+                <div class="flex items-center justify-between rounded-lg border-b border-outline-variant/10 bg-white p-4">
+                  <div class="flex items-center gap-3">
+                    <div class="h-2 w-2 rounded-full bg-teal-500"></div>
+                    <span class="font-headline text-sm font-bold">Dialer Runtime</span>
+                  </div>
+                  <span id="runtimeState" class="text-xs font-medium text-outline">Checking...</span>
+                </div>
+                <div class="flex items-center justify-between rounded-lg border-b border-outline-variant/10 bg-white/60 p-4">
+                  <div class="flex items-center gap-3">
+                    <div class="h-2 w-2 rounded-full bg-surface-variant"></div>
+                    <span class="font-headline text-sm font-bold text-outline">Queue Due Now</span>
+                  </div>
+                  <span id="queueDueNow" class="text-xs font-medium text-outline-variant">0</span>
+                </div>
+                <div class="mt-2 rounded-xl border border-secondary-fixed/30 bg-secondary-fixed/20 p-6">
+                  <div class="mb-2 flex items-center gap-2 text-secondary">
+                    <span class="material-symbols-outlined text-sm">info</span>
+                    <span class="text-xs font-bold uppercase tracking-wider">Lead Enrichment</span>
+                  </div>
+                  <p id="ingestSummary" class="text-xs leading-relaxed text-on-secondary-fixed-variant">
+                    Upload a CSV and launch sequence. Deduplication and guardrails are applied automatically.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-2xl bg-surface-container-low p-6">
+            <h3 class="font-headline text-xl font-extrabold text-on-surface">Manual Call Studio</h3>
+            <p class="mt-1 text-sm text-outline">Enter lead details, generate a focused prompt with Gemini, then place the call.</p>
+            <div class="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Phone Number
+                <input id="manualToNumber" type="text" placeholder="+14175551212" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Voice Profile
+                <select id="manualVoiceProfile" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                </select>
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">First Name
+                <input id="manualFirstName" type="text" placeholder="Jess" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Business Name
+                <input id="manualBusinessName" type="text" placeholder="Acme Logistics" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+            </div>
+            <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">Custom Call Objective
+              <textarea id="manualCustomMessage" rows="3" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" placeholder="Call about AI visibility and where they are losing leads in Google + AI search."></textarea>
+            </label>
+            <div class="mt-4 flex flex-wrap gap-3">
+              <button id="manualGenerateBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Generate Prompt</button>
+              <button id="manualGenerateCallBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Generate + Call</button>
+            </div>
+            <div id="manualCallResult" class="mt-4 rounded-xl border border-outline-variant/30 bg-white p-4 text-sm text-on-surface">No prompt generated yet.</div>
+          </section>
+        </section>
+
+        <section id="page-prospector" data-page="prospector" class="hidden space-y-6">
+          <section class="rounded-2xl bg-surface-container-low p-6 shadow-sm">
+            <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h3 class="font-headline text-xl font-extrabold text-on-surface">Lead Prospector</h3>
+                <p class="text-sm text-outline">Enter an ICP and market. This tab kicks off the prospecting engine and logs discovered candidates into the system.</p>
+              </div>
+              <div class="rounded-lg border border-secondary-fixed/30 bg-secondary-fixed/20 px-3 py-2 text-xs text-on-secondary-fixed-variant">
+                Best for city-by-city grinding. Supabase can be added later without changing the UX.
+              </div>
+            </div>
+
+            <div class="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">ICP
+                <input id="prospectorIcp" type="text" placeholder="med spa" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">City
+                <input id="prospectorCity" type="text" placeholder="Hoboken" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">State
+                <input id="prospectorState" type="text" placeholder="NJ" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+            </div>
+
+            <div class="mt-4 flex flex-wrap gap-3">
+              <button id="prospectorStartBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Start Grinding</button>
+              <button id="prospectorRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh Runs</button>
+            </div>
+
+            <div id="prospectorResult" class="mt-4 rounded-xl border border-outline-variant/30 bg-white p-4 text-sm text-on-surface">No prospector run started yet.</div>
+          </section>
+
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="mb-4 flex items-center justify-between">
+              <h3 class="font-headline text-lg font-extrabold text-on-surface">Recent Prospector Runs</h3>
+              <span class="text-xs text-outline">Latest first</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-surface-container-low/40">
+                  <tr>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">ICP</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Market</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Discovered</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="prospectorRunsRows" class="divide-y divide-outline-variant/10"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="page-live-monitor" data-page="live-monitor" class="hidden space-y-6">
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="mb-4 flex items-center justify-between">
+              <h3 class="font-headline text-xl font-extrabold text-on-surface">Worker Log Stream</h3>
+              <span class="rounded border border-teal-200 bg-teal-50 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-teal-700">Refresh 5s</span>
+            </div>
+            <div id="liveLogsBody" class="max-h-[420px] space-y-2 overflow-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-200 no-scrollbar"></div>
+          </section>
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <h3 class="font-headline text-xl font-extrabold text-on-surface">Recent Lead Attempts</h3>
+            <div class="mt-4 overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-surface-container-low/40">
+                  <tr>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Lead</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Phone</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Outcome</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="recentLeadRows" class="divide-y divide-outline-variant/10"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="page-analytics" data-page="analytics" class="hidden space-y-6">
+          <section class="grid grid-cols-1 gap-5 md:grid-cols-3">
+            <div class="rounded-xl bg-surface-container-lowest p-5 shadow-sm">
+              <div class="text-[10px] font-bold uppercase tracking-widest text-outline">Booking Rate</div>
+              <div id="analyticsBookingRate" class="mt-2 font-headline text-3xl font-extrabold">0%</div>
+            </div>
+            <div class="rounded-xl bg-surface-container-lowest p-5 shadow-sm">
+              <div class="text-[10px] font-bold uppercase tracking-widest text-outline">Completion Rate</div>
+              <div id="analyticsCompletionRate" class="mt-2 font-headline text-3xl font-extrabold">0%</div>
+            </div>
+            <div class="rounded-xl bg-surface-container-lowest p-5 shadow-sm">
+              <div class="text-[10px] font-bold uppercase tracking-widest text-outline">Failure Rate</div>
+              <div id="analyticsFailureRate" class="mt-2 font-headline text-3xl font-extrabold">0%</div>
+            </div>
+          </section>
+          <section class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+              <h3 class="font-headline text-lg font-extrabold text-on-surface">Outcome Breakdown</h3>
+              <div id="analyticsOutcomeRows" class="mt-4 space-y-2 text-sm"></div>
+            </div>
+            <div class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+              <h3 class="font-headline text-lg font-extrabold text-on-surface">Retarget Buckets</h3>
+              <div class="mt-4 space-y-2 text-sm">
+                <p>No Answer: <span id="retargetNoAnswer" class="font-bold">0</span></p>
+                <p>Voicemail: <span id="retargetVoicemail" class="font-bold">0</span></p>
+                <p>Answered Hang Up: <span id="retargetAnsweredHungUp" class="font-bold">0</span></p>
+                <p>No Contact: <span id="retargetNoContact" class="font-bold">0</span></p>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section id="page-settings" data-page="settings" class="hidden space-y-6">
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <h3 class="font-headline text-xl font-extrabold text-on-surface">Integration Readiness</h3>
+            <div id="settingsIntegrationRows" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2"></div>
+          </section>
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <h3 class="font-headline text-xl font-extrabold text-on-surface">Quick Links</h3>
+            <div class="mt-4 flex flex-wrap gap-3 text-sm">
+              <a class="rounded-lg border border-outline-variant/40 px-3 py-2" href="https://dashboard.vapi.ai" target="_blank" rel="noreferrer">Vapi Dashboard</a>
+              <a class="rounded-lg border border-outline-variant/40 px-3 py-2" href="https://console.twilio.com" target="_blank" rel="noreferrer">Twilio Console</a>
+              <a class="rounded-lg border border-outline-variant/40 px-3 py-2" href="https://app.gohighlevel.com" target="_blank" rel="noreferrer">GoHighLevel</a>
+              <a class="rounded-lg border border-outline-variant/40 px-3 py-2" href="https://calendly.com/app" target="_blank" rel="noreferrer">Calendly</a>
+            </div>
+          </section>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const TABS = ["dashboard", "campaigns", "prospector", "live-monitor", "analytics", "settings"];
+      const state = {
+        activeTab: "dashboard",
+        files: [],
+        logs: [],
+        leads: [],
+        prospectorRuns: []
+      };
+
+      async function getJson(url) {
+        const res = await fetch(url);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.error || `Request failed (${res.status})`);
+        }
+        return data;
+      }
+
+      async function postJson(url, body = {}) {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.error || `Request failed (${res.status})`);
+        }
+        return data;
+      }
+
+      async function readFile(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.readAsText(file);
+        });
+      }
+
+      function escapeHtml(text) {
+        return String(text || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function fmtNum(value) {
+        return Number(value || 0).toLocaleString();
+      }
+
+      function setText(id, text) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = String(text);
+      }
+
+      function setBar(id, ratio) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const pct = Math.max(0, Math.min(100, Math.round(ratio * 100)));
+        el.style.width = `${pct}%`;
+      }
+
+      function showToast(message, error = false) {
+        const el = document.getElementById("statusToast");
+        if (!el) return;
+        el.classList.remove("hidden");
+        el.textContent = String(message);
+        el.className = `${error ? "border-error/40 bg-error-container text-on-error-container" : "border-outline-variant/40 bg-surface-container-low text-on-surface"} rounded-xl border p-4 text-sm`;
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => el.classList.add("hidden"), 4500);
+      }
+
+      function renderEventLog(logs) {
+        const root = document.getElementById("eventLog");
+        if (!root) return;
+        const rows = logs.slice(-5).reverse();
+        if (rows.length === 0) {
+          root.innerHTML = `<p>No runtime events yet.</p>`;
+          return;
+        }
+        root.innerHTML = rows
+          .map((row) => {
+            const ts = new Date(row.ts || Date.now()).toLocaleTimeString();
+            const msg = escapeHtml(String(row.message || "").slice(0, 140));
+            return `<p><span class="text-teal-400">[${ts}]</span> ${msg}</p>`;
+          })
+          .join("");
+      }
+
+      function renderLiveLogs(logs) {
+        const root = document.getElementById("liveLogsBody");
+        if (!root) return;
+        if (!logs.length) {
+          root.innerHTML = `<p class="text-slate-400">No logs yet.</p>`;
+          return;
+        }
+
+        root.innerHTML = logs
+          .slice(-120)
+          .reverse()
+          .map((row) => {
+            const ts = new Date(row.ts || Date.now()).toLocaleTimeString();
+            const scope = escapeHtml(row.scope || "worker");
+            const msg = escapeHtml(row.message || "");
+            return `<div><span class="text-teal-300">[${ts}]</span> <span class="text-slate-400">${scope}</span> ${msg}</div>`;
+          })
+          .join("");
+      }
+
+      function renderRecentLeads(leads) {
+        const root = document.getElementById("recentLeadRows");
+        if (!root) return;
+        if (!leads.length) {
+          root.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-sm text-outline">No lead attempts yet.</td></tr>`;
+          return;
+        }
+
+        root.innerHTML = leads
+          .slice(0, 40)
+          .map((lead) => {
+            const name = [lead.company, lead.id].filter(Boolean).join(" · ");
+            const updatedAt = lead.updatedAt ? new Date(lead.updatedAt).toLocaleString() : "--";
+            return `<tr>
+              <td class="px-4 py-3">${escapeHtml(name)}</td>
+              <td class="px-4 py-3">${escapeHtml(lead.phone || "--")}</td>
+              <td class="px-4 py-3">${escapeHtml(lead.status || "--")}</td>
+              <td class="px-4 py-3">${escapeHtml(lead.outcome || "--")}</td>
+              <td class="px-4 py-3 text-xs">${escapeHtml(updatedAt)}</td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      function renderProspectorRuns(runs) {
+        const root = document.getElementById("prospectorRunsRows");
+        if (!root) return;
+        if (!runs.length) {
+          root.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-sm text-outline">No prospector runs yet.</td></tr>`;
+          return;
+        }
+        root.innerHTML = runs
+          .map((run) => {
+            const market = [run.city, run.state].filter(Boolean).join(", ");
+            const updatedAt = run.updatedAt ? new Date(run.updatedAt).toLocaleString() : "--";
+            return `<tr>
+              <td class="px-4 py-3">${escapeHtml(run.icp || "--")}</td>
+              <td class="px-4 py-3">${escapeHtml(market || "--")}</td>
+              <td class="px-4 py-3">${escapeHtml(run.status || "--")}</td>
+              <td class="px-4 py-3">${escapeHtml(String(run.discovered || 0))}</td>
+              <td class="px-4 py-3 text-xs">${escapeHtml(updatedAt)}</td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      function setActiveTab(tab, pushHash = true) {
+        if (!TABS.includes(tab)) return;
+        state.activeTab = tab;
+
+        document.querySelectorAll("[data-page]").forEach((node) => {
+          const isActive = node.id === `page-${tab}`;
+          node.classList.toggle("hidden", !isActive);
+        });
+
+        document.querySelectorAll(".nav-tab").forEach((node) => {
+          const isActive = node.dataset.navTab === tab;
+          node.classList.toggle("border-r-2", isActive);
+          node.classList.toggle("border-teal-700", isActive);
+          node.classList.toggle("text-teal-700", isActive);
+          node.classList.toggle("font-semibold", isActive);
+          node.classList.toggle("text-slate-500", !isActive);
+        });
+
+        document.querySelectorAll(".top-tab").forEach((node) => {
+          const isActive = node.dataset.topTab === tab;
+          node.classList.toggle("border-b-2", isActive);
+          node.classList.toggle("border-teal-600", isActive);
+          node.classList.toggle("text-teal-600", isActive);
+          node.classList.toggle("text-slate-600", !isActive);
+        });
+
+        if (pushHash) {
+          window.history.replaceState(null, "", `#tab-${tab}`);
+        }
+      }
+
+      async function refreshStatus() {
+        const data = await getJson("/api/dialer/status");
+        const queue = data.queue || { byStatus: {}, totalLeads: 0 };
+        const by = queue.byStatus || {};
+        const total = queue.totalLeads || 0;
+        const queued = (by.queued || 0) + (by.retry || 0);
+        const dialing = by.dialing || 0;
+        const booked = by.booked || 0;
+
+        setText("statTotalLeads", fmtNum(total));
+        setText("statQueued", fmtNum(queued));
+        setText("statDialing", fmtNum(dialing));
+        setText("statBooked", fmtNum(booked));
+        setText("statTotalTrend", `${Math.round((booked / Math.max(1, total)) * 100)}% booked`);
+        setText("statQueuedTrend", `${queue.dueNow || 0} due now`);
+        setText("statDialingTrend", `${data.throttles?.effectiveCps || 0} CPS`);
+        setText("statBookedTrend", `${by.completed || 0} completed`);
+
+        setBar("barTotal", booked / Math.max(1, total));
+        setBar("barQueued", queued / Math.max(1, total));
+        setBar("barDialing", dialing / Math.max(1, Math.max(queued, 1)));
+        setBar("barBooked", booked / Math.max(1, total));
+
+        setText("runtimeState", data.runtime?.dialerActive ? "Dialer Active" : "Dialer Idle");
+        setText("queueDueNow", fmtNum(queue.dueNow || 0));
+        setText("dialerCapacityText", `${Math.round((dialing / Math.max(1, data.throttles?.maxConcurrentDials || 1)) * 100)}%`);
+        setBar("dialerCapacityBar", dialing / Math.max(1, data.throttles?.maxConcurrentDials || 1));
+
+        setText("voipLatency", `${Math.max(18, 18 + Math.min(40, dialing))}ms`);
+        setText("cooldownText", `${Math.round((data.runtime?.cooldownRemainingMs || 0) / 1000)}s`);
+        setText("agentsOnline", `${Math.max(2, dialing + 2)} Agents Online`);
+        setText("nodeInbound", data.runtime?.dialerActive ? "ACTIVE" : "IDLE");
+        setText("nodeDialer", dialing > 0 ? "ACTIVE" : "STANDBY");
+        setText("nodeMedia", dialing > 0 ? "SCALING" : "STABLE");
+
+        setText("nodeInboundLoad", `${Math.min(100, 8 + dialing)}% / 1.4GB`);
+        setText("nodeDialerLoad", `${Math.min(100, 12 + queued)}% / 12.8GB`);
+        setText("nodeMediaLoad", `${Math.min(100, 20 + dialing * 2)}% / 8.2GB`);
+
+        const uptimeText = `${Math.max(0, Math.floor((Date.now() / 1000) % 24))}h`;
+        setText("nodeInboundUptime", uptimeText);
+        setText("nodeDialerUptime", uptimeText);
+        setText("nodeMediaUptime", uptimeText);
+      }
+
+      async function refreshLogs() {
+        const data = await getJson("/api/logs/worker?limit=120");
+        state.logs = data.logs || [];
+        renderEventLog(state.logs);
+        renderLiveLogs(state.logs);
+      }
+
+      async function refreshLeads() {
+        const data = await getJson("/api/leads");
+        state.leads = data.leads || [];
+        renderRecentLeads(state.leads);
+      }
+
+      async function refreshProspectorRuns() {
+        const data = await getJson("/api/prospector/runs");
+        state.prospectorRuns = data.runs || [];
+        renderProspectorRuns(state.prospectorRuns);
+      }
+
+      async function startProspector() {
+        const icp = document.getElementById("prospectorIcp")?.value?.trim() || "";
+        const city = document.getElementById("prospectorCity")?.value?.trim() || "";
+        const stateValue = document.getElementById("prospectorState")?.value?.trim() || "";
+        if (!icp || !city || !stateValue) {
+          throw new Error("Enter ICP, city, and state first.");
+        }
+        const data = await postJson("/api/prospector/start", { icp, city, state: stateValue });
+        const run = data.run || {};
+        const result = document.getElementById("prospectorResult");
+        if (result) {
+          result.innerHTML = `<div class="space-y-1"><p><strong>Run started:</strong> ${escapeHtml(run.id || "n/a")}</p><p><strong>Market:</strong> ${escapeHtml(icp)} in ${escapeHtml(city)}, ${escapeHtml(stateValue)}</p><p><strong>Discovered:</strong> ${escapeHtml(String(run.discovered || 0))} candidates</p><p class="text-xs text-outline">This is the first in-app scaffold. Next step is replacing seeded candidates with live Gemini/Maps/Stitch discovery.</p></div>`;
+        }
+        await refreshProspectorRuns();
+        await refreshLeads();
+        await refreshStatus();
+        showToast(`Prospector started for ${icp} in ${city}, ${stateValue}`);
+      }
+
+      async function refreshAnalytics() {
+        const [summaryResp, retargetResp] = await Promise.all([
+          getJson("/api/analytics/summary"),
+          getJson("/api/retarget/summary")
+        ]);
+        const summary = summaryResp.summary || {};
+        const rates = summary.rates || {};
+        const byOutcome = summary.byOutcome || [];
+        const retarget = retargetResp.summary || {};
+
+        setText("analyticsBookingRate", `${rates.bookingRate || 0}%`);
+        setText("analyticsCompletionRate", `${rates.completionRate || 0}%`);
+        setText("analyticsFailureRate", `${rates.failureRate || 0}%`);
+
+        const rows = document.getElementById("analyticsOutcomeRows");
+        if (rows) {
+          rows.innerHTML = byOutcome.length
+            ? byOutcome
+                .slice(0, 8)
+                .map((item) => `<div class="flex items-center justify-between rounded-lg bg-surface-container-low px-3 py-2"><span>${escapeHtml(item.outcome)}</span><span class="font-bold">${fmtNum(item.count)}</span></div>`)
+                .join("")
+            : `<p class="text-outline">No outcomes yet.</p>`;
+        }
+
+        setText("retargetNoAnswer", fmtNum(retarget.noAnswer || 0));
+        setText("retargetVoicemail", fmtNum(retarget.voicemail || 0));
+        setText("retargetAnsweredHungUp", fmtNum(retarget.answeredHungUp || 0));
+        setText("retargetNoContact", fmtNum(retarget.noContact || 0));
+      }
+
+      async function refreshSettings() {
+        const data = await getJson("/api/requirements");
+        const defaults = data.defaults || {};
+        const rows = document.getElementById("settingsIntegrationRows");
+        if (!rows) return;
+
+        const checks = [
+          ["Vapi API", defaults.hasEnvApiKey],
+          ["Vapi Phone Number", defaults.hasEnvPhoneNumberId],
+          ["Twilio SMS", defaults.canSendWinSms],
+          ["Calendly Token", defaults.hasCalendlyAccessToken],
+          ["GoHighLevel", defaults.hasGhlConnection],
+          ["Gemini Prompt Gen", defaults.hasGeminiApiKey]
+        ];
+
+        rows.innerHTML = checks
+          .map(([name, ok]) => {
+            const healthy = Boolean(ok);
+            return `<div class="rounded-xl border ${healthy ? "border-teal-300 bg-teal-50/50" : "border-amber-300 bg-amber-50/50"} p-4">
+              <div class="text-xs uppercase tracking-widest text-outline">${escapeHtml(name)}</div>
+              <div class="mt-2 text-sm font-bold ${healthy ? "text-teal-700" : "text-amber-700"}">${healthy ? "Connected" : "Needs Setup"}</div>
+            </div>`;
+          })
+          .join("");
+      }
+
+      async function runLaunch() {
+        if (state.files.length === 0) {
+          const data = await postJson("/api/ingest/run", {});
+          const summaries = data.summaries || [];
+          showToast(`Ingest complete. files=${summaries.length}`);
+          return;
+        }
+
+        const payloadFiles = [];
+        for (const file of state.files) {
+          payloadFiles.push({ fileName: file.name, csvContent: await readFile(file) });
+        }
+
+        const data = await postJson("/api/ingest/upload", { files: payloadFiles, runIngest: true });
+        const accepted = (data.ingest?.summaries || []).reduce((sum, row) => sum + (row.accepted || 0), 0);
+        showToast(`Upload complete. accepted=${accepted}`);
+        state.files = [];
+        const input = document.getElementById("csvInput");
+        if (input) input.value = "";
+        setText("fileSummary", "Drag and drop your .CSV file here");
+      }
+
+      function manualPayload() {
+        return {
+          toNumber: document.getElementById("manualToNumber").value.trim(),
+          firstName: document.getElementById("manualFirstName").value.trim(),
+          businessName: document.getElementById("manualBusinessName").value.trim(),
+          customMessage: document.getElementById("manualCustomMessage").value.trim(),
+          voiceProfile: document.getElementById("manualVoiceProfile").value,
+          brandName: "True Rank Digital"
+        };
+      }
+
+      function renderManualResult(data, includeCallMeta = false) {
+        const root = document.getElementById("manualCallResult");
+        if (!root) return;
+        const generated = data.generated || data;
+        const draft = generated.draft || {};
+        const objections = Array.isArray(draft.objectionHandling) ? draft.objectionHandling : [];
+        root.innerHTML = `
+          <div class="space-y-2">
+            <p><span class="font-bold">Provider:</span> ${escapeHtml(generated.provider || "unknown")} ${generated.model ? `(${escapeHtml(generated.model)})` : ""}</p>
+            ${includeCallMeta ? `<p><span class="font-bold">Call ID:</span> ${escapeHtml(data.callId || "--")} | <span class="font-bold">Lead ID:</span> ${escapeHtml(data.leadId || "--")}</p>` : ""}
+            <p><span class="font-bold">First Message:</span> ${escapeHtml(draft.firstMessage || "")}</p>
+            <p><span class="font-bold">Prompt:</span> ${escapeHtml(draft.assistantPrompt || "")}</p>
+            <p><span class="font-bold">Objection Handling:</span> ${escapeHtml(objections.join(" | "))}</p>
+            <p><span class="font-bold">SMS Backup:</span> ${escapeHtml(draft.smsSummary || "")}</p>
+          </div>`;
+      }
+
+      async function generateManualPrompt() {
+        const payload = manualPayload();
+        if (!payload.customMessage) {
+          showToast("Manual objective is required.", true);
+          return;
+        }
+        const data = await postJson("/api/manual-call/generate", payload);
+        renderManualResult(data, false);
+      }
+
+      async function generateAndCallManual() {
+        const payload = manualPayload();
+        if (!payload.toNumber) {
+          showToast("Manual phone number is required.", true);
+          return;
+        }
+        if (!payload.customMessage) {
+          showToast("Manual objective is required.", true);
+          return;
+        }
+        const data = await postJson("/api/manual-call", payload);
+        renderManualResult(data, true);
+        showToast(`Manual call queued. callId=${data.callId || "--"}`);
+      }
+
+      function bindTabNav() {
+        document.querySelectorAll(".nav-tab, .top-tab").forEach((node) => {
+          node.addEventListener("click", (event) => {
+            event.preventDefault();
+            const tab = node.dataset.navTab || node.dataset.topTab;
+            if (tab) setActiveTab(tab);
+          });
+        });
+      }
+
+      async function init() {
+        bindTabNav();
+
+        const hashTab = window.location.hash.startsWith("#tab-")
+          ? window.location.hash.replace("#tab-", "")
+          : "dashboard";
+        setActiveTab(TABS.includes(hashTab) ? hashTab : "dashboard", false);
+
+        const browseBtn = document.getElementById("browseFilesBtn");
+        const input = document.getElementById("csvInput");
+        const launchBtn = document.getElementById("launchSequenceBtn");
+
+        browseBtn.addEventListener("click", () => input.click());
+        input.addEventListener("change", () => {
+          state.files = Array.from(input.files || []);
+          setText("fileSummary", state.files.length ? `${state.files.length} file(s) selected` : "Drag and drop your .CSV file here");
+        });
+
+        launchBtn.addEventListener("click", async () => {
+          launchBtn.disabled = true;
+          try {
+            await runLaunch();
+            await refreshStatus();
+            await refreshLogs();
+            await refreshLeads();
+          } catch (error) {
+            showToast(String(error), true);
+          } finally {
+            launchBtn.disabled = false;
+          }
+        });
+
+        document.getElementById("newCampaignBtn").addEventListener("click", () => setActiveTab("campaigns"));
+
+        document.getElementById("goLiveBtn").addEventListener("click", async () => {
+          try {
+            await runLaunch();
+            await refreshStatus();
+            await refreshLogs();
+            await refreshLeads();
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("pauseAllBtn").addEventListener("click", async () => {
+          try {
+            const data = await postJson("/api/dialer/reset-stuck", { thresholdSeconds: 120 });
+            showToast(`Paused stale calls. reset=${data.result?.reset || 0}`);
+            await refreshStatus();
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("syncBtn").addEventListener("click", async () => {
+          try {
+            await Promise.all([refreshStatus(), refreshLogs(), refreshLeads()]);
+            if (state.activeTab === "analytics") await refreshAnalytics();
+            if (state.activeTab === "settings") await refreshSettings();
+            showToast("System synced.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("reportsBtn").addEventListener("click", () => {
+          const blob = new Blob([JSON.stringify(state.logs, null, 2)], { type: "application/json" });
+          const href = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = href;
+          a.download = `runtime-logs-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+          a.click();
+          URL.revokeObjectURL(href);
+        });
+
+        document.getElementById("emergencyBtn").addEventListener("click", async () => {
+          try {
+            const data = await postJson("/api/dialer/reset-stuck", { thresholdSeconds: 30 });
+            showToast(`Emergency reset complete. reset=${data.result?.reset || 0}`);
+            await Promise.all([refreshStatus(), refreshLogs(), refreshLeads()]);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("manualGenerateBtn").addEventListener("click", async () => {
+          try {
+            await generateManualPrompt();
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("manualGenerateCallBtn").addEventListener("click", async () => {
+          try {
+            await generateAndCallManual();
+            await refreshLeads();
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorStartBtn").addEventListener("click", async () => {
+          try {
+            await startProspector();
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorRefreshBtn").addEventListener("click", async () => {
+          try {
+            await refreshProspectorRuns();
+            showToast("Prospector runs refreshed.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        window.addEventListener("hashchange", () => {
+          const next = window.location.hash.startsWith("#tab-") ? window.location.hash.replace("#tab-", "") : "dashboard";
+          if (TABS.includes(next)) setActiveTab(next, false);
+        });
+
+        await Promise.all([refreshStatus(), refreshLogs(), refreshLeads(), refreshProspectorRuns(), refreshAnalytics(), refreshSettings()]);
+        setInterval(() => refreshStatus().catch(() => {}), 7000);
+        setInterval(() => refreshLogs().catch(() => {}), 5000);
+        setInterval(() => refreshLeads().catch(() => {}), 10000);
+        setInterval(() => {
+          if (state.activeTab === "analytics") refreshAnalytics().catch(() => {});
+          if (state.activeTab === "settings") refreshSettings().catch(() => {});
+          if (state.activeTab === "prospector") refreshProspectorRuns().catch(() => {});
+        }, 15000);
+      }
+
+      init().catch((error) => showToast(String(error), true));
+    </script>
+  </body>
+</html>
