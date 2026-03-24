@@ -32,6 +32,7 @@ export interface Lead {
   generatedSitePath?: string;
   generatedScreenshotPath?: string;
   deployedSiteUrl?: string;
+  handoffStatus?: 'draft' | 'ready_for_review' | 'ready_for_call' | 'sent_to_queue';
   optIn: boolean;
   dnc: boolean;
   status: LeadStatus;

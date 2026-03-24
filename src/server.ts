@@ -13,6 +13,7 @@ import { createOutboundCall, type VoiceProfile } from "./vapiClient.js";
 import { fetchSmartListContacts, isGhlConfigured, syncLeadToGhl } from "./integrations/ghl.js";
 import { listProspectorRuns, startProspectorRun } from "./prospector.js";
 import { generateReadyProspectSites } from "./generation.js";
+import { createProspectScreenshots } from "./screenshots.js";
 import { computeAnalyticsSummary } from "./analytics.js";
 import {
   exportRetargetBuckets,
@@ -1698,6 +1699,8 @@ export function createServer() {
           prospectWebsiteUri: lead.prospectWebsiteUri,
           generationStatus: lead.generationStatus,
           generatedSitePath: lead.generatedSitePath,
+          generatedScreenshotPath: lead.generatedScreenshotPath,
+          handoffStatus: lead.handoffStatus,
           updatedAt: lead.updatedAt
         }));
     });
@@ -1708,6 +1711,13 @@ export function createServer() {
     const body = (req.body || {}) as Record<string, unknown>;
     const limit = asOptionalInt(body.limit, 1, 100) || 10;
     const result = await generateReadyProspectSites(limit);
+    res.json({ ok: true, result });
+  });
+
+  app.post("/api/prospector/generate-screenshots", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const limit = asOptionalInt(body.limit, 1, 100) || 10;
+    const result = await createProspectScreenshots(limit);
     res.json({ ok: true, result });
   });
 

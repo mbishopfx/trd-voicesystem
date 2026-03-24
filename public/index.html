@@ -430,6 +430,7 @@
             <div class="mt-4 flex flex-wrap gap-3">
               <button id="prospectorStartBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Start Grinding</button>
               <button id="prospectorGenerateBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Generate Sites</button>
+              <button id="prospectorScreenshotBtn" class="rounded-xl border border-tertiary/35 bg-tertiary/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-tertiary">Generate Screenshots</button>
               <button id="prospectorRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh Runs</button>
             </div>
 
@@ -475,6 +476,7 @@
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Business</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Website</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Generation</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Handoff</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Phone</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Updated</th>
                   </tr>
@@ -814,7 +816,7 @@
         const root = document.getElementById("prospectorLeadRows");
         if (!root) return;
         if (!leads.length) {
-          root.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-sm text-outline">No prospector leads yet.</td></tr>`;
+          root.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-sm text-outline">No prospector leads yet.</td></tr>`;
           return;
         }
         root.innerHTML = leads.map((lead) => {
@@ -823,6 +825,7 @@
             <td class="px-4 py-3">${escapeHtml(lead.company || lead.id || '--')}</td>
             <td class="px-4 py-3">${escapeHtml(lead.prospectWebsiteStatus || '--')}</td>
             <td class="px-4 py-3">${escapeHtml(lead.generationStatus || '--')}</td>
+            <td class="px-4 py-3">${escapeHtml(lead.handoffStatus || '--')}</td>
             <td class="px-4 py-3">${escapeHtml(lead.phone || '--')}</td>
             <td class="px-4 py-3 text-xs">${escapeHtml(updatedAt)}</td>
           </tr>`;
@@ -1132,6 +1135,17 @@
             await refreshProspectorRuns();
             await refreshLeads();
             showToast(`Generated ${data.result?.generated || 0} prospect site(s).`);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorScreenshotBtn").addEventListener("click", async () => {
+          try {
+            const data = await postJson("/api/prospector/generate-screenshots", { limit: 10 });
+            await refreshProspectorRuns();
+            await refreshLeads();
+            showToast(`Generated ${data.result?.generated || 0} prospect screenshot(s).`);
           } catch (error) {
             showToast(String(error), true);
           }

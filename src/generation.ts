@@ -49,6 +49,7 @@ export async function generateReadyProspectSites(limit = 10): Promise<{ generate
       await fs.writeFile(fullPath, renderLeadHomepage(lead), 'utf8');
       lead.generatedSitePath = fullPath;
       lead.generationStatus = 'generated';
+      lead.handoffStatus = 'ready_for_review';
       lead.updatedAt = new Date().toISOString();
       generated.push(lead.id);
     }
