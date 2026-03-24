@@ -16,6 +16,7 @@ import { generateReadyProspectSites } from "./generation.js";
 import { createProspectScreenshots } from "./screenshots.js";
 import { markProspectReadyForCall } from "./handoff.js";
 import { releaseProspectToQueue } from "./queueRelease.js";
+import { getProspectLeadById } from "./prospectTest.js";
 import { computeAnalyticsSummary } from "./analytics.js";
 import {
   exportRetargetBuckets,
@@ -2810,6 +2811,108 @@ export function createServer() {
         toNumber
       });
       res.status(500).json({ ok: false, error: String(error), generated });
+    }
+  });
+
+  app.post("/api/prospector/test-contact", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const leadId = safeString(body.leadId);
+    const rawToNumber = safeString(body.toNumber) || "";
+    const toNumber = normalizePhone(rawToNumber);
+    const sendSms = asBool(body.sendSms, true);
+
+    if (!leadId) {
+      res.status(400).json({ ok: false, error: "leadId is required" });
+      return;
+    }
+    if (!toNumber) {
+      res.status(400).json({ ok: false, error: "Invalid toNumber" });
+      return;
+    }
+
+    const sourceLead = await getProspectLeadById(leadId);
+    if (!sourceLead) {
+      res.status(404).json({ ok: false, error: "Prospect lead not found" });
+      return;
+    }
+    if (!sourceLead.generatedSitePath || !sourceLead.generatedScreenshotPath) {
+      res.status(400).json({ ok: false, error: "Prospect assets are not ready" });
+      return;
+    }
+
+    const lead: Lead = {
+      ...sourceLead,
+      id: `${sourceLead.id}-test-call`,
+      phone: toNumber,
+      status: 'queued',
+      attempts: 0,
+      callId: undefined,
+      callAttemptedAt: undefined,
+      callEndedAt: undefined,
+      lastAttemptAt: undefined,
+      lastError: undefined,
+      outcome: undefined,
+      transcript: undefined,
+      transcriptSummary: undefined,
+      recordingUrl: undefined,
+      sourceFile: 'prospector-test-call',
+      notes: `Prospector test call to owner-approved number using lead ${sourceLead.id}`,
+      updatedAt: nowIso(),
+      createdAt: nowIso()
+    };
+
+    try {
+      const twilioPayload = {
+        assistantId: config.vapiAssistantId,
+        customer: {
+          number: toNumber,
+          name: String(sourceLead.company || 'Test Prospect').slice(0, 40)
+        },
+        phoneNumber: {
+          twilioPhoneNumber: config.twilioPhoneNumber,
+          twilioAccountSid: config.twilioAccountSid,
+          twilioAuthToken: config.twilioAuthToken
+        },
+        assistantOverrides: {
+          variableValues: {
+            leadCompany: sourceLead.company || '',
+            leadFindings: sourceLead.findings || '',
+            generatedSitePath: sourceLead.generatedSitePath || '',
+            generatedScreenshotPath: sourceLead.generatedScreenshotPath || '',
+            demoOffer: 'We created a sample website preview and can text it over after the call.'
+          }
+        },
+        metadata: {
+          leadId: lead.id,
+          campaign: lead.campaign,
+          sourceFile: lead.sourceFile
+        }
+      };
+
+      const vapiResponse = await fetch(`${config.vapiBaseUrl}/call`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.vapiApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(twilioPayload)
+      });
+      const raw = await vapiResponse.text();
+      if (!vapiResponse.ok) {
+        throw new Error(`Vapi prospect test call failed (${vapiResponse.status}): ${raw}`);
+      }
+      const result = JSON.parse(raw) as { id: string };
+
+      let sms: Record<string, unknown> | undefined;
+      if (sendSms) {
+        const text = `Demo site preview for ${sourceLead.company || 'the prospect'} is ready. Site file: ${sourceLead.generatedSitePath}. Screenshot file: ${sourceLead.generatedScreenshotPath}.`;
+        const sent = await sendSmsMessage({ to: toNumber, body: text });
+        sms = { sent: true, sid: sent.sid, status: sent.status };
+      }
+
+      res.json({ ok: true, callId: result.id, leadId: lead.id, sms });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
     }
   });
 
