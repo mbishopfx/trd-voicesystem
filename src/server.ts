@@ -17,6 +17,8 @@ import { createProspectScreenshots } from "./screenshots.js";
 import { markProspectReadyForCall } from "./handoff.js";
 import { releaseProspectToQueue } from "./queueRelease.js";
 import { getProspectLeadById } from "./prospectTest.js";
+import { createProspectVisionTemplate } from "./prospectTemplate.js";
+import { deployGeneratedProspects } from "./deploy.js";
 import { computeAnalyticsSummary } from "./analytics.js";
 import {
   exportRetargetBuckets,
@@ -1703,6 +1705,7 @@ export function createServer() {
           generationStatus: lead.generationStatus,
           generatedSitePath: lead.generatedSitePath,
           generatedScreenshotPath: lead.generatedScreenshotPath,
+          deployedSiteUrl: lead.deployedSiteUrl,
           handoffStatus: lead.handoffStatus,
           updatedAt: lead.updatedAt
         }));
@@ -1752,6 +1755,23 @@ export function createServer() {
       return;
     }
     res.json({ ok: true, result });
+  });
+
+  app.post("/api/prospector/deploy-sites", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const limit = asOptionalInt(body.limit, 1, 100) || 10;
+    const result = await deployGeneratedProspects(limit);
+    res.json({ ok: true, result });
+  });
+
+  app.post("/api/prospector/create-vision-assistant", async (_req: Request, res: Response) => {
+    try {
+      const template = createProspectVisionTemplate();
+      const created = await createVapiAssistantFromTemplate(template);
+      res.json({ ok: true, assistantId: created.id, assistant: created.raw });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
   });
 
   app.post("/api/prospector/start", async (req: Request, res: Response) => {
@@ -2862,6 +2882,7 @@ export function createServer() {
     };
 
     try {
+      const liveLink = sourceLead.deployedSiteUrl || sourceLead.generatedSitePath || '';
       const twilioPayload = {
         assistantId: config.vapiAssistantId,
         customer: {
@@ -2877,9 +2898,10 @@ export function createServer() {
           variableValues: {
             leadCompany: sourceLead.company || '',
             leadFindings: sourceLead.findings || '',
-            generatedSitePath: sourceLead.generatedSitePath || '',
+            deployedSiteUrl: liveLink,
             generatedScreenshotPath: sourceLead.generatedScreenshotPath || '',
-            demoOffer: 'We created a sample website preview and can text it over after the call.'
+            demoOffer: 'We created a quick vision of what we can do on the fly and will text over the live link after the call.',
+            complianceNote: 'It is just a vision of what we can do on the fly.'
           }
         },
         metadata: {
@@ -2905,7 +2927,7 @@ export function createServer() {
 
       let sms: Record<string, unknown> | undefined;
       if (sendSms) {
-        const text = `Demo site preview for ${sourceLead.company || 'the prospect'} is ready. Site file: ${sourceLead.generatedSitePath}. Screenshot file: ${sourceLead.generatedScreenshotPath}.`;
+        const text = `${sourceLead.company || 'Your business'}: we put together a quick vision of what we can do on the fly. Here is the live preview link: ${liveLink}`;
         const sent = await sendSmsMessage({ to: toNumber, body: text });
         sms = { sent: true, sid: sent.sid, status: sent.status };
       }
