@@ -1707,6 +1707,7 @@ export function createServer() {
           generatedSitePath: lead.generatedSitePath,
           generatedScreenshotPath: lead.generatedScreenshotPath,
           deployedSiteUrl: lead.deployedSiteUrl,
+          bookingUrl: 'https://cal.com/trd-voice/intro',
           handoffStatus: lead.handoffStatus,
           updatedAt: lead.updatedAt
         }));
