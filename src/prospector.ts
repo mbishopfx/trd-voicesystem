@@ -58,6 +58,35 @@ interface PlaceCandidate {
   googleMapsUri?: string;
 }
 
+const NON_OWNED_HOST_MARKERS = [
+  'facebook.com',
+  'instagram.com',
+  'yelp.com',
+  'mapquest.com',
+  'linkedin.com',
+  'tiktok.com',
+  'x.com',
+  'twitter.com',
+  'youtube.com',
+  'thumbtack.com',
+  'angi.com',
+  'angi.',
+  'yellowpages.com',
+  'bbb.org'
+];
+
+function normalizeOwnedWebsite(url?: string): string | undefined {
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (NON_OWNED_HOST_MARKERS.some((marker) => host.includes(marker))) return undefined;
+    return url;
+  } catch {
+    return undefined;
+  }
+}
+
 const runs: ProspectorRun[] = [];
 
 function slug(value: string): string {
@@ -156,12 +185,17 @@ async function cseLikelyWebsite(name: string, city: string, state: string): Prom
   }
   const data = (await res.json()) as { items?: Array<{ link?: string }> };
   runtimeInfo('agent', 'prospector cse response', { name, city, state, count: data.items?.length || 0 });
-  return data.items?.find((item) => item.link && !item.link.includes('google.com'))?.link;
+  for (const item of data.items || []) {
+    const normalized = normalizeOwnedWebsite(item.link);
+    if (normalized) return normalized;
+  }
+  return undefined;
 }
 
 async function buildLead(input: ProspectorRunInput, place: PlaceCandidate, idx: number): Promise<Lead> {
   const createdAt = nowIso();
-  const fallbackWebsite = place.websiteUri || (await cseLikelyWebsite(place.name, input.city, input.state));
+  const placeWebsite = normalizeOwnedWebsite(place.websiteUri);
+  const fallbackWebsite = placeWebsite || (await cseLikelyWebsite(place.name, input.city, input.state));
   const websiteStatus = fallbackWebsite ? 'present' : 'missing';
   const summary = websiteStatus === 'missing'
     ? await geminiSummary({ icp: input.icp, city: input.city, state: input.state, business: place.name, address: place.formattedAddress, websiteStatus })
@@ -191,7 +225,7 @@ async function buildLead(input: ProspectorRunInput, place: PlaceCandidate, idx: 
     generationStatus: websiteStatus === 'missing' ? 'ready' : 'not_started',
     optIn: false,
     dnc: false,
-    status: fallbackWebsite ? 'blocked' : 'queued',
+    status: 'blocked',
     attempts: 0,
     createdAt,
     updatedAt: createdAt,
