@@ -563,7 +563,21 @@ function extractTranscriptFromVapiCall(payload: Record<string, unknown>): string
       .map((row) => asObject(row))
       .map((row) => {
         if (!row) return undefined;
-        return safeString(row.transcript) || safeString(row.content) || safeString(row.message);
+        const role = safeString(row.role)?.toLowerCase();
+        const text = safeString(row.transcript) || safeString(row.content) || safeString(row.message);
+        if (!text) return undefined;
+
+        // Ignore prompt/system/tool payloads so transcript exports represent conversation only.
+        if (role === "system" || role === "tool") return undefined;
+        if (
+          text.length > 1000 &&
+          text.includes("Operating rules:") &&
+          text.includes("Objective:") &&
+          text.includes("Compliance notes:")
+        ) {
+          return undefined;
+        }
+        return text;
       })
       .filter((value): value is string => Boolean(value))
       .join("\n");
