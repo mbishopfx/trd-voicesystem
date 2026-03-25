@@ -2047,6 +2047,8 @@ export function createServer() {
         hasFirecrawlApiKey: Boolean(config.firecrawlApiKey),
         hasGoogleApiKey: Boolean(config.googleApiKey),
         hasGoogleCseId: Boolean(config.googleCseId),
+        hasDataForSeoAuth: Boolean(config.dataForSeoLogin && config.dataForSeoPassword),
+        hasApolloApiKey: Boolean(config.apolloApiKey),
         hasDatabaseState: Boolean(config.databaseUrl),
         bookingProvider: config.bookingProvider,
         hasCalendlyBookingUrl: Boolean(config.bookingUrlCalendly),

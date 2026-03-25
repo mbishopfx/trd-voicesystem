@@ -109,6 +109,8 @@ Twilio fallback (if Vapi phone number UUID is unavailable):
 - `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` (Google Maps/Places + Search enrichment)
 - `XAI_API_KEY` (optional lead-scoring/enrichment fallback chain)
 - `FIRECRAWL_API_KEY` (optional website scrape enrichment for contact + positioning signals)
+- `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` (optional SERP/maps enrichment source)
+- `APOLLO_API_KEY` (optional company enrichment by domain)
 
 ## Recommended env for persistent cloud state
 

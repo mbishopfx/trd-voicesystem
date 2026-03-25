@@ -35,7 +35,7 @@ interface PlaceCandidate {
   userRatingCount?: number;
   businessStatus?: string;
   types?: string[];
-  source: 'places_new' | 'places_legacy' | 'cse';
+  source: 'places_new' | 'places_legacy' | 'cse' | 'dataforseo';
   query?: string;
 }
 
@@ -86,6 +86,10 @@ function asString(value: unknown): string | undefined {
 function asNumber(value: unknown): number | undefined {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -411,6 +415,132 @@ async function searchCseCandidates(queries: string[]): Promise<PlaceCandidate[]>
   }
 
   return [...dedupe.values()];
+}
+
+async function searchDataForSeoCandidates(icp: string, city: string, state: string): Promise<PlaceCandidate[]> {
+  if (!config.dataForSeoLogin || !config.dataForSeoPassword) return [];
+  const dedupe = new Map<string, PlaceCandidate>();
+  const queries = buildSearchQueries(icp, city, state).slice(0, 4);
+  const tasks = queries.map((keyword) => ({
+    keyword,
+    location_name: `${city}, ${state}, United States`,
+    language_name: 'English'
+  }));
+
+  try {
+    const auth = Buffer.from(`${config.dataForSeoLogin}:${config.dataForSeoPassword}`).toString('base64');
+    const res = await fetch('https://api.dataforseo.com/v3/serp/google/maps/live/advanced', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(tasks)
+    });
+    if (!res.ok) {
+      runtimeInfo('agent', 'prospector dataforseo request failed', { status: res.status });
+      return [];
+    }
+
+    const payload = (await res.json()) as Record<string, unknown>;
+    const taskRows = asArray(payload.tasks).map((row) => asObject(row)).filter((row): row is Record<string, unknown> => Boolean(row));
+    for (const task of taskRows) {
+      const results = asArray(task.result).map((row) => asObject(row)).filter((row): row is Record<string, unknown> => Boolean(row));
+      for (const result of results) {
+        const items = asArray(result.items).map((row) => asObject(row)).filter((row): row is Record<string, unknown> => Boolean(row));
+        for (const item of items) {
+          const title = asString(item.title) || asString(item.name);
+          if (!title) continue;
+          const domain = asString(item.domain);
+          const website = normalizeOwnedWebsite(domain ? `https://${domain.replace(/^https?:\/\//i, '')}` : asString(item.url));
+          const ratingNode = asObject(item.rating);
+          const rating = asNumber(item.rating) || asNumber(ratingNode?.value);
+          const reviewCount = asNumber(item.reviews) || asNumber(item.reviews_count) || asNumber(ratingNode?.votes_count);
+          const category = asString(item.category);
+
+          const candidate: PlaceCandidate = {
+            id: asString(item.place_id) || asString(item.cid),
+            name: title,
+            formattedAddress: asString(item.address),
+            nationalPhoneNumber: asString(item.phone),
+            websiteUri: website,
+            googleMapsUri: asString(item.url),
+            rating,
+            userRatingCount: reviewCount,
+            businessStatus: asString(item.business_status),
+            types: category ? [category] : undefined,
+            source: 'dataforseo'
+          };
+          const key = candidate.id || `${candidate.name}|${candidate.formattedAddress || ''}|${hostFromUrl(candidate.websiteUri)}`;
+          if (!dedupe.has(key)) dedupe.set(key, candidate);
+        }
+      }
+    }
+  } catch (error) {
+    runtimeError('agent', 'prospector dataforseo errored', error, { icp, city, state });
+  }
+
+  return [...dedupe.values()];
+}
+
+async function apolloOrganizationByDomain(
+  domain: string
+): Promise<{ description?: string; phone?: string; industry?: string; employeeCount?: number } | undefined> {
+  if (!config.apolloApiKey || !domain) return undefined;
+
+  const cleanDomain = domain.replace(/^www\./, '').toLowerCase();
+  const parseOrg = (obj: Record<string, unknown>): { description?: string; phone?: string; industry?: string; employeeCount?: number } => {
+    const primaryPhoneNode = asObject(obj.primary_phone);
+    return {
+      description: asString(obj.short_description) || asString(obj.description),
+      phone: asString(primaryPhoneNode?.number) || asString(obj.phone),
+      industry: asString(obj.industry),
+      employeeCount: asNumber(obj.estimated_num_employees)
+    };
+  };
+
+  try {
+    const enrichRes = await fetch(
+      `https://api.apollo.io/api/v1/organizations/enrich?domain=${encodeURIComponent(cleanDomain)}`,
+      {
+        method: 'GET',
+        headers: {
+          'x-api-key': config.apolloApiKey,
+          Accept: 'application/json'
+        }
+      }
+    );
+    if (enrichRes.ok) {
+      const payload = (await enrichRes.json()) as Record<string, unknown>;
+      const organization = asObject(payload.organization) || asObject(payload);
+      if (organization) return parseOrg(organization);
+    }
+  } catch (error) {
+    runtimeError('agent', 'prospector apollo enrich errored', error, { domain: cleanDomain });
+  }
+
+  try {
+    const searchRes = await fetch('https://api.apollo.io/api/v1/organizations/search', {
+      method: 'POST',
+      headers: {
+        'x-api-key': config.apolloApiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        q_organization_domains: [cleanDomain],
+        page: 1,
+        per_page: 1
+      })
+    });
+    if (!searchRes.ok) return undefined;
+    const payload = (await searchRes.json()) as Record<string, unknown>;
+    const organizations = asArray(payload.organizations).map((row) => asObject(row)).filter((row): row is Record<string, unknown> => Boolean(row));
+    if (organizations[0]) return parseOrg(organizations[0]);
+    return undefined;
+  } catch (error) {
+    runtimeError('agent', 'prospector apollo search errored', error, { domain: cleanDomain });
+    return undefined;
+  }
 }
 
 async function cseLikelyWebsite(
@@ -747,6 +877,14 @@ async function searchPlaces(icp: string, city: string, state: string): Promise<P
     }
   }
 
+  if (all.size < 30) {
+    const dfsResults = await searchDataForSeoCandidates(icp, city, state);
+    for (const row of dfsResults) {
+      const key = row.id || `${row.name}|${row.formattedAddress || ''}|${hostFromUrl(row.websiteUri)}`;
+      if (!all.has(key)) all.set(key, row);
+    }
+  }
+
   const out = [...all.values()].slice(0, 80);
   runtimeInfo('agent', 'prospector source merge complete', {
     icp,
@@ -755,7 +893,8 @@ async function searchPlaces(icp: string, city: string, state: string): Promise<P
     total: out.length,
     placesNew: out.filter((row) => row.source === 'places_new').length,
     placesLegacy: out.filter((row) => row.source === 'places_legacy').length,
-    cse: out.filter((row) => row.source === 'cse').length
+    cse: out.filter((row) => row.source === 'cse').length,
+    dataforseo: out.filter((row) => row.source === 'dataforseo').length
   });
   return out;
 }
@@ -767,6 +906,7 @@ async function buildLead(input: ProspectorRunInput, place: PlaceCandidate, idx: 
   const fallbackWebsite = placeWebsite || cseFallback?.website;
   const websiteStatus: Lead['prospectWebsiteStatus'] = fallbackWebsite ? 'present' : 'missing';
   const websiteProfile = fallbackWebsite ? await scrapeWebsiteProfile(fallbackWebsite) : undefined;
+  const apolloProfile = fallbackWebsite ? await apolloOrganizationByDomain(hostFromUrl(fallbackWebsite)) : undefined;
   const leadIntel = await generateLeadIntel({
     icp: input.icp,
     city: input.city,
@@ -788,10 +928,20 @@ async function buildLead(input: ProspectorRunInput, place: PlaceCandidate, idx: 
       : undefined;
   const normalizedPhone =
     normalizePhone(place.nationalPhoneNumber || websiteProfile?.phone || '') ||
+    normalizePhone(apolloProfile?.phone || '') ||
     place.nationalPhoneNumber ||
+    apolloProfile?.phone ||
     websiteProfile?.phone ||
     '';
-  const sourceTags = [...new Set([place.source, fallbackWebsite ? 'website_detected' : 'website_missing', cseFallback ? 'cse_website_lookup' : ''])].filter(Boolean);
+  const sourceTags = [
+    ...new Set([
+      place.source,
+      fallbackWebsite ? 'website_detected' : 'website_missing',
+      cseFallback ? 'cse_website_lookup' : '',
+      websiteProfile ? 'firecrawl' : '',
+      apolloProfile ? 'apollo' : ''
+    ])
+  ].filter(Boolean);
   const findingsParts = [
     `Address: ${place.formattedAddress || 'n/a'}`,
     `Maps: ${place.googleMapsUri || 'n/a'}`,
@@ -801,7 +951,9 @@ async function buildLead(input: ProspectorRunInput, place: PlaceCandidate, idx: 
     `Source: ${place.source}`,
     websiteProfile?.title ? `Site Title: ${websiteProfile.title}` : '',
     websiteProfile?.description ? `Site Desc: ${truncate(websiteProfile.description, 120)}` : '',
-    cseFallback?.snippet ? `Search Snippet: ${truncate(cseFallback.snippet, 120)}` : ''
+    cseFallback?.snippet ? `Search Snippet: ${truncate(cseFallback.snippet, 120)}` : '',
+    apolloProfile?.industry ? `Apollo Industry: ${apolloProfile.industry}` : '',
+    apolloProfile?.employeeCount ? `Apollo Employees: ${apolloProfile.employeeCount}` : ''
   ].filter(Boolean);
   const id =
     `prospector-${slug(input.icp)}-${slug(input.city)}-${slug(input.state)}-${slug(place.name).slice(0, 24)}-${idx}`.slice(
@@ -823,7 +975,7 @@ async function buildLead(input: ProspectorRunInput, place: PlaceCandidate, idx: 
     findings: findingsParts.join(' | '),
     notes:
       `Multi-source prospecting complete. quality=${leadIntel.qualityScore}, opportunity=${leadIntel.opportunityScore}, provider=${leadIntel.provider}. ` +
-      `${leadIntel.reason}`,
+      `${leadIntel.reason}${apolloProfile?.description ? ` Apollo: ${truncate(apolloProfile.description, 140)}` : ''}`,
     prospectAddress: place.formattedAddress,
     prospectGoogleMapsUri: place.googleMapsUri,
     prospectWebsiteUri: fallbackWebsite,
