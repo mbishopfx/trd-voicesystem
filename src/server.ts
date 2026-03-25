@@ -2398,29 +2398,45 @@ export function createServer() {
       res.status(400).json({ ok: false, error: "phase1 requires icp, city, and state" });
       return;
     }
-    const run = await startProspectorRun({ icp, city, state: stateValue });
-    res.json({ ok: true, phase: 1, run });
+    try {
+      const run = await startProspectorRun({ icp, city, state: stateValue });
+      res.json({ ok: true, phase: 1, run });
+    } catch (error) {
+      res.status(500).json({ ok: false, phase: 1, error: String(error) });
+    }
   });
 
   app.post("/api/prospector/phase2", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
     const limit = asOptionalInt(body.limit, 1, 100) || 10;
-    const result = await runProspectorPhase2(limit);
-    res.json({ ok: true, phase: 2, result });
+    try {
+      const result = await runProspectorPhase2(limit);
+      res.json({ ok: true, phase: 2, result });
+    } catch (error) {
+      res.status(500).json({ ok: false, phase: 2, error: String(error) });
+    }
   });
 
   app.post("/api/prospector/phase3", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
     const limit = asOptionalInt(body.limit, 1, 500) || 100;
-    const result = await runProspectorPhase3(limit);
-    res.json({ ok: true, phase: 3, result });
+    try {
+      const result = await runProspectorPhase3(limit);
+      res.json({ ok: true, phase: 3, result });
+    } catch (error) {
+      res.status(500).json({ ok: false, phase: 3, error: String(error) });
+    }
   });
 
   app.post("/api/prospector/phase4", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
     const limit = asOptionalInt(body.limit, 1, 500) || 100;
-    const result = await runProspectorPhase4(limit);
-    res.json({ ok: true, phase: 4, result });
+    try {
+      const result = await runProspectorPhase4(limit);
+      res.json({ ok: true, phase: 4, result });
+    } catch (error) {
+      res.status(500).json({ ok: false, phase: 4, error: String(error) });
+    }
   });
 
   app.post("/api/prospector/phase5", async (req: Request, res: Response) => {

@@ -248,9 +248,12 @@ async function generateProspectorHomepageHtml(lead: Lead): Promise<{
   return { html: renderFallbackTemplate(lead), source: "fallback", promptVersion };
 }
 
-export async function generateReadyProspectSites(limit = 10): Promise<{ generated: number; leads: string[] }> {
+export async function generateReadyProspectSites(
+  limit = 10
+): Promise<{ generated: number; leads: string[]; failed: number; failedLeads: Array<{ leadId: string; error: string }> }> {
   await fs.mkdir(config.generatedSitesDir, { recursive: true });
   const generated: string[] = [];
+  const failedLeads: Array<{ leadId: string; error: string }> = [];
 
   await withState(async (state) => {
     const ready = Object.values(state.leads)
@@ -258,32 +261,43 @@ export async function generateReadyProspectSites(limit = 10): Promise<{ generate
       .slice(0, limit);
 
     for (const lead of ready) {
-      const built = await generateProspectorHomepageHtml(lead);
-      const deployName = buildDeployName(lead);
-      const fileName = `${safeFileName(deployName)}.html`;
-      const fullPath = path.resolve(config.generatedSitesDir, fileName);
-      await fs.writeFile(fullPath, built.html, "utf8");
+      try {
+        const built = await generateProspectorHomepageHtml(lead);
+        const deployName = buildDeployName(lead);
+        const fileName = `${safeFileName(deployName)}.html`;
+        const fullPath = path.resolve(config.generatedSitesDir, fileName);
+        await fs.writeFile(fullPath, built.html, "utf8");
 
-      lead.generatedSitePath = fullPath;
-      lead.generationStatus = "generated";
-      lead.prospectDeployName = deployName;
-      lead.prospectorPhase = 2;
-      lead.prospectorPhaseStatus = "phase2_generated";
-      lead.prospectorTemplateSource = built.source;
-      lead.prospectorTemplateModel = built.model;
-      lead.prospectorPromptVersion = built.promptVersion;
-      lead.updatedAt = nowIso();
-      generated.push(lead.id);
+        lead.generatedSitePath = fullPath;
+        lead.generationStatus = "generated";
+        lead.prospectDeployName = deployName;
+        lead.prospectorPhase = 2;
+        lead.prospectorPhaseStatus = "phase2_generated";
+        lead.prospectorTemplateSource = built.source;
+        lead.prospectorTemplateModel = built.model;
+        lead.prospectorPromptVersion = built.promptVersion;
+        lead.updatedAt = nowIso();
+        generated.push(lead.id);
 
-      runtimeInfo("agent", "prospector site generated", {
-        leadId: lead.id,
-        deployName,
-        generatedSitePath: fullPath,
-        source: built.source,
-        model: built.model || ""
-      });
+        runtimeInfo("agent", "prospector site generated", {
+          leadId: lead.id,
+          deployName,
+          generatedSitePath: fullPath,
+          source: built.source,
+          model: built.model || ""
+        });
+      } catch (error) {
+        const message = String(error).slice(0, 500);
+        lead.prospectorPhase = 2;
+        lead.prospectorPhaseStatus = "phase2_generation_error";
+        lead.generationStatus = "ready";
+        lead.lastError = message;
+        lead.updatedAt = nowIso();
+        failedLeads.push({ leadId: lead.id, error: message });
+        runtimeError("agent", "prospector site generation failed", error, { leadId: lead.id });
+      }
     }
   });
 
-  return { generated: generated.length, leads: generated };
+  return { generated: generated.length, leads: generated, failed: failedLeads.length, failedLeads };
 }

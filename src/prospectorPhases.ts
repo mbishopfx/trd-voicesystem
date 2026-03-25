@@ -5,6 +5,7 @@ import { syncProspectorContactToGhl } from "./integrations/ghl.js";
 import { normalizePhone } from "./phone.js";
 import { startProspectorRun } from "./prospector.js";
 import { appendProspectorPhaseRecord } from "./prospectorRecords.js";
+import { runtimeError } from "./runtimeLogs.js";
 import { withState } from "./store.js";
 import type { Lead } from "./types.js";
 import { nowIso } from "./utils.js";
@@ -26,10 +27,11 @@ export interface ProspectorPipelineInput {
 
 export interface ProspectorPipelineResult {
   phase1?: { createdRunId: string; discovered: number };
-  phase2?: { generated: number; deployed: number; leadIds: string[] };
+  phase2?: { generated: number; deployed: number; leadIds: string[]; generationFailed: number; deployFailed: number };
   phase3?: { organized: number; ghlSynced: number; skipped: number };
   phase4?: { scripted: number; skipped: number };
-  phase5?: { queued: number; skipped: number; failed: number; callIds: string[] };
+  phase5?: { queued: number; skipped: number; failed: number; callIds: string[]; error?: string };
+  errors?: Array<{ phase: 1 | 2 | 3 | 4 | 5; error: string }>;
 }
 
 function appendNote(base: string | undefined, message: string): string {
@@ -79,7 +81,20 @@ async function listProspectorLeads(limit: number, predicate: (lead: Lead) => boo
   );
 }
 
-export async function runProspectorPhase2(limit = 10): Promise<{ generated: number; deployed: number; leadIds: string[] }> {
+async function safeAppendRecord(input: Parameters<typeof appendProspectorPhaseRecord>[0]): Promise<void> {
+  try {
+    await appendProspectorPhaseRecord(input);
+  } catch (error) {
+    runtimeError("agent", "prospector phase record write failed", error, {
+      leadId: input.leadId,
+      phase: input.phase
+    });
+  }
+}
+
+export async function runProspectorPhase2(
+  limit = 10
+): Promise<{ generated: number; deployed: number; leadIds: string[]; generationFailed: number; deployFailed: number }> {
   const generated = await generateReadyProspectSites(limit);
   const deployed = await deployGeneratedProspects(limit);
   const updatedAt = nowIso();
@@ -101,7 +116,7 @@ export async function runProspectorPhase2(limit = 10): Promise<{ generated: numb
       return row ? { ...row } : undefined;
     });
     if (!lead) continue;
-    await appendProspectorPhaseRecord({
+    await safeAppendRecord({
       leadId,
       phase: 2,
       status: "success",
@@ -116,13 +131,23 @@ export async function runProspectorPhase2(limit = 10): Promise<{ generated: numb
     });
   }
 
+  for (const failed of generated.failedLeads) {
+    await safeAppendRecord({
+      leadId: failed.leadId,
+      phase: 2,
+      status: "error",
+      message: "Phase 2 page generation failed",
+      payload: { error: failed.error }
+    });
+  }
+
   for (const leadId of deployed.leads) {
     const lead = await withState((state) => {
       const row = state.leads[leadId];
       return row ? { ...row } : undefined;
     });
     if (!lead) continue;
-    await appendProspectorPhaseRecord({
+    await safeAppendRecord({
       leadId,
       phase: 2,
       status: "success",
@@ -134,10 +159,22 @@ export async function runProspectorPhase2(limit = 10): Promise<{ generated: numb
     });
   }
 
+  for (const failed of deployed.failedLeads) {
+    await safeAppendRecord({
+      leadId: failed.leadId,
+      phase: 2,
+      status: "error",
+      message: "Phase 2 deploy failed",
+      payload: { error: failed.error }
+    });
+  }
+
   return {
     generated: generated.generated,
     deployed: deployed.deployed,
-    leadIds: Array.from(new Set([...generated.leads, ...deployed.leads]))
+    leadIds: Array.from(new Set([...generated.leads, ...deployed.leads])),
+    generationFailed: generated.failed,
+    deployFailed: deployed.failed
   };
 }
 
@@ -185,7 +222,7 @@ export async function runProspectorPhase3(limit = 50): Promise<{ organized: numb
       continue;
     }
     organized += 1;
-    await appendProspectorPhaseRecord({
+    await safeAppendRecord({
       leadId: lead.id,
       phase: 3,
       status: "success",
@@ -227,7 +264,7 @@ export async function runProspectorPhase4(limit = 50): Promise<{ scripted: numbe
       continue;
     }
     scripted += 1;
-    await appendProspectorPhaseRecord({
+    await safeAppendRecord({
       leadId: lead.id,
       phase: 4,
       status: "success",
@@ -245,13 +282,14 @@ export async function runProspectorPhase4(limit = 50): Promise<{ scripted: numbe
 
 export async function runProspectorPhase5(
   input: { limit?: number; leadId?: string; dryRun?: boolean; assistantId?: string } = {}
-): Promise<{ queued: number; skipped: number; failed: number; callIds: string[] }> {
+): Promise<{ queued: number; skipped: number; failed: number; callIds: string[]; error?: string }> {
   const limit = Math.max(1, Math.min(100, Math.trunc(input.limit || 10)));
   const dryRun = Boolean(input.dryRun);
   const assistantId = (input.assistantId || config.vapiProspectorAssistantId || "").trim();
-  if (!assistantId) {
+  if (!assistantId && !dryRun) {
     throw new Error("Missing VAPI_PROSPECTOR_ASSISTANT_ID. Prospector calls must use a specialized assistant.");
   }
+  const assistantError = !assistantId ? "Missing VAPI_PROSPECTOR_ASSISTANT_ID (dry-run only; no calls placed)." : undefined;
 
   const leads = await listProspectorLeads(limit, (lead) => {
     if (input.leadId && lead.id !== input.leadId) return false;
@@ -267,7 +305,7 @@ export async function runProspectorPhase5(
     const toNumber = normalizePhone(lead.phone || "");
     if (!toNumber) {
       skipped += 1;
-      await appendProspectorPhaseRecord({
+      await safeAppendRecord({
         leadId: lead.id,
         phase: 5,
         status: "skipped",
@@ -278,8 +316,30 @@ export async function runProspectorPhase5(
       continue;
     }
 
+    if (assistantError) {
+      skipped += 1;
+      await safeAppendRecord({
+        leadId: lead.id,
+        phase: 5,
+        status: "skipped",
+        message: assistantError,
+        company: lead.company,
+        deployedSiteUrl: lead.deployedSiteUrl
+      });
+      continue;
+    }
+
     if (dryRun) {
       skipped += 1;
+      await safeAppendRecord({
+        leadId: lead.id,
+        phase: 5,
+        status: "skipped",
+        message: "Phase 5 dry-run: call not queued",
+        company: lead.company,
+        deployedSiteUrl: lead.deployedSiteUrl,
+        payload: { assistantId }
+      });
       continue;
     }
 
@@ -309,7 +369,7 @@ export async function runProspectorPhase5(
 
       queued += 1;
       callIds.push(result.id);
-      await appendProspectorPhaseRecord({
+      await safeAppendRecord({
         leadId: lead.id,
         phase: 5,
         status: "success",
@@ -320,7 +380,7 @@ export async function runProspectorPhase5(
       });
     } catch (error) {
       failed += 1;
-      await appendProspectorPhaseRecord({
+      await safeAppendRecord({
         leadId: lead.id,
         phase: 5,
         status: "error",
@@ -332,7 +392,7 @@ export async function runProspectorPhase5(
     }
   }
 
-  return { queued, skipped, failed, callIds };
+  return { queued, skipped, failed, callIds, error: assistantError };
 }
 
 export async function runProspectorPipeline(input: ProspectorPipelineInput): Promise<ProspectorPipelineResult> {
@@ -343,33 +403,59 @@ export async function runProspectorPipeline(input: ProspectorPipelineInput): Pro
   const runPhase4 = input.runPhase4 !== false;
   const runPhase5 = Boolean(input.runPhase5);
   const out: ProspectorPipelineResult = {};
+  const errors: Array<{ phase: 1 | 2 | 3 | 4 | 5; error: string }> = [];
 
   if (runPhase1) {
     const icp = (input.icp || "").trim();
     const city = (input.city || "").trim();
     const state = (input.state || "").trim();
     if (!icp || !city || !state) {
-      throw new Error("phase1 requires icp, city, and state");
+      errors.push({ phase: 1, error: "phase1 requires icp, city, and state" });
+    } else {
+      try {
+        const run = await startProspectorRun({ icp, city, state });
+        out.phase1 = { createdRunId: run.id, discovered: run.discovered };
+      } catch (error) {
+        errors.push({ phase: 1, error: String(error).slice(0, 600) });
+      }
     }
-    const run = await startProspectorRun({ icp, city, state });
-    out.phase1 = { createdRunId: run.id, discovered: run.discovered };
   }
 
   if (runPhase2) {
-    out.phase2 = await runProspectorPhase2(limit);
+    try {
+      out.phase2 = await runProspectorPhase2(limit);
+    } catch (error) {
+      errors.push({ phase: 2, error: String(error).slice(0, 600) });
+    }
   }
   if (runPhase3) {
-    out.phase3 = await runProspectorPhase3(limit);
+    try {
+      out.phase3 = await runProspectorPhase3(limit);
+    } catch (error) {
+      errors.push({ phase: 3, error: String(error).slice(0, 600) });
+    }
   }
   if (runPhase4) {
-    out.phase4 = await runProspectorPhase4(limit);
+    try {
+      out.phase4 = await runProspectorPhase4(limit);
+    } catch (error) {
+      errors.push({ phase: 4, error: String(error).slice(0, 600) });
+    }
   }
   if (runPhase5) {
-    out.phase5 = await runProspectorPhase5({
-      limit,
-      dryRun: input.dryRunCalls,
-      assistantId: input.assistantId
-    });
+    try {
+      out.phase5 = await runProspectorPhase5({
+        limit,
+        dryRun: input.dryRunCalls,
+        assistantId: input.assistantId
+      });
+    } catch (error) {
+      errors.push({ phase: 5, error: String(error).slice(0, 600) });
+    }
+  }
+
+  if (errors.length > 0) {
+    out.errors = errors;
   }
 
   return out;
