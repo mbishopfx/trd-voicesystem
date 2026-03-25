@@ -73,6 +73,7 @@ const NON_OWNED_HOST_MARKERS = [
 ];
 
 const runs: ProspectorRun[] = [];
+let xaiRateLimitedUntilMs = 0;
 
 function asObject(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
@@ -628,6 +629,7 @@ async function xaiLeadIntel(input: {
   websiteProfile?: WebsiteProfile;
 }): Promise<LeadIntel | undefined> {
   if (!config.xaiApiKey) return undefined;
+  if (Date.now() < xaiRateLimitedUntilMs) return undefined;
   try {
     const endpoint = `${config.xaiBaseUrl.replace(/\/$/, '')}/chat/completions`;
     const prompt = JSON.stringify(
@@ -669,6 +671,9 @@ async function xaiLeadIntel(input: {
       })
     });
     if (!res.ok) {
+      if (res.status === 429) {
+        xaiRateLimitedUntilMs = Date.now() + 5 * 60 * 1000;
+      }
       runtimeInfo('agent', 'prospector xai score failed', { status: res.status });
       return undefined;
     }
