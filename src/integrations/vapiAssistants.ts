@@ -89,7 +89,7 @@ export async function createVapiAssistantFromTemplate(
     model: {
       provider: "openai",
       model: "gpt-4.1-mini",
-      temperature: 0.2,
+      temperature: 0.3,
       messages: [
         {
           role: "system",

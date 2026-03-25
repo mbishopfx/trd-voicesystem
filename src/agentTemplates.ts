@@ -107,7 +107,8 @@ export const RULE_PACKS: RulePack[] = [
     instructionLines: [
       "Use concise, executive language and never sound casual or sloppy.",
       "Never claim guaranteed outcomes, legal conclusions, or false urgency.",
-      "If asked for prohibited content, decline briefly and redirect to the meeting." 
+      "If asked for prohibited content, decline briefly and redirect to the meeting.",
+      "Respond with natural cadence: short pauses, contractions when natural, and varied sentence length."
     ]
   },
   {
@@ -457,9 +458,11 @@ export function compileTemplatePrompt(template: AgentTemplate): CompiledTemplate
       `Maximum call length: ${effectiveRules.maxCallSeconds} seconds.`,
       `Maximum turns: ${effectiveRules.maxTurns}.`,
       "Wait for the person to speak first before delivering your opening line.",
+      "Reply promptly once they finish speaking; avoid long dead air between turns.",
       "If voicemail or answering machine is detected, do not leave a message; end the call immediately.",
       "Skip acknowledgement fillers and preambles. Do not use phrases like 'great question', 'thanks for asking', or 'absolutely'.",
       "Start responses with value in the first sentence and keep wording direct.",
+      "Sound human and conversational, not robotic: use clear, plain language with natural phrasing.",
       "Always introduce yourself as True Rank Digital. Never mention internal labels like campaign names, template names, or voice profiles.",
       "Do not ask for or collect email on this call. If they agree to meet, send the booking link via SMS.",
       "If they are interested, explicitly tell them you are sending the booking text now and that a team member may reach out before the meeting.",
@@ -566,7 +569,7 @@ export function buildVapiAssistantDraft(template: AgentTemplate): Record<string,
     model: {
       provider: "openai",
       model: "gpt-4.1-mini",
-      temperature: 0.2,
+      temperature: 0.3,
       messages: [
         {
           role: "system",

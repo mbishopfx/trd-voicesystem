@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+
 export interface RuntimeLogEntry {
   id: number;
   at: string;
@@ -10,6 +13,46 @@ export interface RuntimeLogEntry {
 const MAX_LOGS = 5000;
 let nextId = 1;
 const logs: RuntimeLogEntry[] = [];
+const LOG_DIR = path.resolve(process.cwd(), "data", "state");
+const LOG_FILE = path.resolve(LOG_DIR, "runtime-logs.jsonl");
+
+function ensureLogDir(): void {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  } catch {
+    // no-op
+  }
+}
+
+function loadPersistedLogs(): void {
+  try {
+    ensureLogDir();
+    if (!fs.existsSync(LOG_FILE)) return;
+    const raw = fs.readFileSync(LOG_FILE, "utf8");
+    if (!raw.trim()) return;
+
+    const loaded: RuntimeLogEntry[] = raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as RuntimeLogEntry;
+        } catch {
+          return undefined;
+        }
+      })
+      .filter((row): row is RuntimeLogEntry => Boolean(row && typeof row.id === "number" && typeof row.ts === "number"));
+
+    if (loaded.length === 0) return;
+    const recent = loaded.slice(-MAX_LOGS);
+    logs.push(...recent);
+    const maxId = recent.reduce((max, row) => Math.max(max, row.id), 0);
+    nextId = Math.max(nextId, maxId + 1);
+  } catch {
+    // no-op
+  }
+}
 
 function now(): { at: string; ts: number } {
   const ts = Date.now();
@@ -29,8 +72,16 @@ function push(entry: Omit<RuntimeLogEntry, "id" | "at" | "ts">): RuntimeLogEntry
   if (logs.length > MAX_LOGS) {
     logs.splice(0, logs.length - MAX_LOGS);
   }
+  try {
+    ensureLogDir();
+    fs.appendFileSync(LOG_FILE, `${JSON.stringify(row)}\n`, "utf8");
+  } catch {
+    // no-op
+  }
   return row;
 }
+
+loadPersistedLogs();
 
 export function runtimeInfo(
   scope: RuntimeLogEntry["scope"],
