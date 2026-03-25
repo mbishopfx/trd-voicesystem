@@ -663,7 +663,7 @@ async function pickFirstReachableAudioUrl(candidates: string[]): Promise<string 
       return candidate;
     }
   }
-  return deduped[0];
+  return undefined;
 }
 
 async function chooseAudioUrlFromSet(audio: AudioUrlSet, format?: AudioFormat): Promise<string | undefined> {
@@ -671,7 +671,9 @@ async function chooseAudioUrlFromSet(audio: AudioUrlSet, format?: AudioFormat): 
   let url: string | undefined = format ? preferred[0] : preferred[0] || audio.any[0];
 
   if (!url && format) {
-    const variants = audio.any.flatMap((candidate) => deriveAudioFormatCandidates(candidate, format));
+    const variants = audio.any.flatMap((candidate) =>
+      deriveAudioFormatCandidates(candidate, format).filter((variant) => variant !== candidate)
+    );
     url = await pickFirstReachableAudioUrl(variants);
   }
 
@@ -832,7 +834,9 @@ async function resolveAudioDownloadUrl(
   let url: string | undefined = await chooseAudioUrlFromSet(audio, format);
 
   if (!url && format && workingLead.recordingUrl) {
-    const variants = deriveAudioFormatCandidates(workingLead.recordingUrl, format);
+    const variants = deriveAudioFormatCandidates(workingLead.recordingUrl, format).filter(
+      (variant) => variant !== workingLead.recordingUrl
+    );
     url = await pickFirstReachableAudioUrl(variants);
   }
 
