@@ -118,6 +118,19 @@
     <main class="min-h-screen p-4 pt-24 md:ml-64 md:p-8 md:pt-24">
       <div class="mx-auto max-w-[1600px] space-y-8">
         <div id="statusToast" class="hidden rounded-xl border border-outline-variant/40 bg-surface-container-low p-4 text-sm text-on-surface"></div>
+        <section id="routeHealthBanner" class="rounded-2xl border border-amber-300 bg-amber-50/50 p-4">
+          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-widest text-outline">Pre-Launch Healthcheck</p>
+              <p id="routeHealthSummary" class="mt-1 text-sm font-semibold text-amber-700">Checking Railway and API route connectivity...</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <span id="routeHealthUpdated" class="text-xs text-outline">Updated --</span>
+              <button id="routeHealthRefreshBtn" class="rounded-lg border border-outline-variant/30 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-on-surface">Recheck</button>
+            </div>
+          </div>
+          <div id="routeHealthChecks" class="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3"></div>
+        </section>
 
         <section id="page-dashboard" data-page="dashboard" class="space-y-8">
           <section class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
@@ -573,7 +586,12 @@
         files: [],
         logs: [],
         leads: [],
-        prospectorRuns: []
+        prospectorRuns: [],
+        routeHealth: {
+          healthy: false,
+          checks: [],
+          checkedAt: 0
+        }
       };
 
       async function getJson(url) {
@@ -640,6 +658,93 @@
         el.className = `${error ? "border-error/40 bg-error-container text-on-error-container" : "border-outline-variant/40 bg-surface-container-low text-on-surface"} rounded-xl border p-4 text-sm`;
         window.clearTimeout(showToast.timer);
         showToast.timer = window.setTimeout(() => el.classList.add("hidden"), 4500);
+      }
+
+      async function probeRoute(label, path, options = {}) {
+        const started = Date.now();
+        try {
+          const res = await fetch(path, {
+            method: options.method || "GET",
+            cache: "no-store"
+          });
+          const latencyMs = Math.max(0, Date.now() - started);
+          const status = Number(res.status || 0);
+          const ok = typeof options.accept === "function" ? Boolean(options.accept(status)) : res.ok;
+          return { label, path, ok, status, latencyMs };
+        } catch (error) {
+          const latencyMs = Math.max(0, Date.now() - started);
+          return {
+            label,
+            path,
+            ok: false,
+            status: 0,
+            latencyMs,
+            error: String(error).slice(0, 140)
+          };
+        }
+      }
+
+      function renderRouteHealth() {
+        const summary = document.getElementById("routeHealthSummary");
+        const updated = document.getElementById("routeHealthUpdated");
+        const root = document.getElementById("routeHealthChecks");
+        const banner = document.getElementById("routeHealthBanner");
+        if (!summary || !updated || !root || !banner) return;
+
+        const checks = state.routeHealth.checks || [];
+        const healthy = Boolean(state.routeHealth.healthy);
+        const checkedAt = state.routeHealth.checkedAt ? new Date(state.routeHealth.checkedAt).toLocaleTimeString() : "--";
+
+        banner.className = `rounded-2xl border p-4 ${healthy ? "border-teal-300 bg-teal-50/50" : "border-amber-300 bg-amber-50/50"}`;
+        summary.className = `mt-1 text-sm font-semibold ${healthy ? "text-teal-700" : "text-amber-700"}`;
+        summary.textContent = healthy
+          ? "All core routes are connected. Safe to launch campaigns."
+          : "One or more routes failed. Fix connection issues before launch.";
+        updated.textContent = `Updated ${checkedAt}`;
+
+        if (!checks.length) {
+          root.innerHTML = `<div class="rounded-lg border border-outline-variant/20 bg-white p-3 text-xs text-outline">No checks run yet.</div>`;
+          return;
+        }
+
+        root.innerHTML = checks
+          .map((check) => {
+            const ok = Boolean(check.ok);
+            const statusText = ok ? "Connected" : check.status ? `Error ${check.status}` : "Unreachable";
+            return `<div class="rounded-lg border ${ok ? "border-teal-300 bg-white" : "border-amber-300 bg-white"} p-3">
+              <div class="text-[10px] font-bold uppercase tracking-widest text-outline">${escapeHtml(check.label)}</div>
+              <div class="mt-1 text-sm font-bold ${ok ? "text-teal-700" : "text-amber-700"}">${escapeHtml(statusText)}</div>
+              <div class="mt-1 text-[11px] text-outline">${escapeHtml(check.path)} · ${escapeHtml(String(check.latencyMs || 0))}ms</div>
+            </div>`;
+          })
+          .join("");
+      }
+
+      async function refreshRouteHealth() {
+        const checks = await Promise.all([
+          probeRoute("Railway Health", "/health"),
+          probeRoute("API Requirements", "/api/requirements"),
+          probeRoute("Dialer Status API", "/api/dialer/status"),
+          probeRoute("Vapi Webhook Route", "/webhooks/vapi", {
+            method: "OPTIONS",
+            accept: (status) => status >= 200 && status < 500 && status !== 404
+          }),
+          probeRoute("Calendly Webhook Route", "/webhooks/calendly", {
+            method: "OPTIONS",
+            accept: (status) => status >= 200 && status < 500 && status !== 404
+          }),
+          probeRoute("Tools Webhook Route", "/tools/vapi", {
+            method: "OPTIONS",
+            accept: (status) => status >= 200 && status < 500 && status !== 404
+          })
+        ]);
+
+        state.routeHealth = {
+          checks,
+          healthy: checks.every((check) => check.ok),
+          checkedAt: Date.now()
+        };
+        renderRouteHealth();
       }
 
       function renderEventLog(logs) {
@@ -1032,6 +1137,11 @@
         launchBtn.addEventListener("click", async () => {
           launchBtn.disabled = true;
           try {
+            await refreshRouteHealth();
+            if (!state.routeHealth.healthy) {
+              showToast("Healthcheck failed. Resolve route connectivity before launch.", true);
+              return;
+            }
             await runLaunch();
             await refreshStatus();
             await refreshLogs();
@@ -1047,6 +1157,11 @@
 
         document.getElementById("goLiveBtn").addEventListener("click", async () => {
           try {
+            await refreshRouteHealth();
+            if (!state.routeHealth.healthy) {
+              showToast("Healthcheck failed. Resolve route connectivity before going live.", true);
+              return;
+            }
             await runLaunch();
             await refreshStatus();
             await refreshLogs();
@@ -1068,7 +1183,7 @@
 
         document.getElementById("syncBtn").addEventListener("click", async () => {
           try {
-            await Promise.all([refreshStatus(), refreshLogs(), refreshLeads()]);
+            await Promise.all([refreshStatus(), refreshLogs(), refreshLeads(), refreshRouteHealth()]);
             if (state.activeTab === "analytics") await refreshAnalytics();
             if (state.activeTab === "settings") await refreshSettings();
             showToast("System synced.");
@@ -1181,15 +1296,33 @@
           }
         });
 
+        document.getElementById("routeHealthRefreshBtn").addEventListener("click", async () => {
+          try {
+            await refreshRouteHealth();
+            showToast(state.routeHealth.healthy ? "Healthcheck passed." : "Healthcheck found route issues.", !state.routeHealth.healthy);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
         window.addEventListener("hashchange", () => {
           const next = window.location.hash.startsWith("#tab-") ? window.location.hash.replace("#tab-", "") : "dashboard";
           if (TABS.includes(next)) setActiveTab(next, false);
         });
 
-        await Promise.all([refreshStatus(), refreshLogs(), refreshLeads(), refreshProspectorRuns(), refreshAnalytics(), refreshSettings()]);
+        await Promise.all([
+          refreshStatus(),
+          refreshLogs(),
+          refreshLeads(),
+          refreshProspectorRuns(),
+          refreshAnalytics(),
+          refreshSettings(),
+          refreshRouteHealth()
+        ]);
         setInterval(() => refreshStatus().catch(() => {}), 7000);
         setInterval(() => refreshLogs().catch(() => {}), 5000);
         setInterval(() => refreshLeads().catch(() => {}), 10000);
+        setInterval(() => refreshRouteHealth().catch(() => {}), 15000);
         setInterval(() => {
           if (state.activeTab === "analytics") refreshAnalytics().catch(() => {});
           if (state.activeTab === "settings") refreshSettings().catch(() => {});
