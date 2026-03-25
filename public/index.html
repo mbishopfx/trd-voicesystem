@@ -511,6 +511,26 @@
             <div id="liveLogsBody" class="max-h-[420px] space-y-2 overflow-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-200 no-scrollbar"></div>
           </section>
           <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 class="font-headline text-xl font-extrabold text-on-surface">Vapi Artifact Pull</h3>
+                <p class="text-xs text-outline">One click pull transcript, then download MP3 or WAV from the same lead/call.</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Lead ID or Call ID
+                <input id="artifactLookupInput" type="text" placeholder="lead-id or call-id" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <div class="flex flex-wrap items-end gap-2">
+                <button id="artifactTranscriptBtn" class="rounded-xl border border-teal-300 bg-teal-50 px-3 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Pull Transcript</button>
+                <button id="artifactMp3Btn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-3 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Download MP3</button>
+                <button id="artifactWavBtn" class="rounded-xl border border-tertiary/35 bg-tertiary/20 px-3 py-2 text-xs font-bold uppercase tracking-wider text-tertiary">Download WAV</button>
+                <button id="artifactTraceBtn" class="rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Open Trace</button>
+              </div>
+            </div>
+            <div id="artifactPullResult" class="mt-4 rounded-xl border border-outline-variant/30 bg-white p-4 text-sm text-on-surface">No artifact pull yet.</div>
+          </section>
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
             <h3 class="font-headline text-xl font-extrabold text-on-surface">Recent Lead Attempts</h3>
             <div class="mt-4 overflow-x-auto">
               <table class="w-full text-left text-sm">
@@ -614,6 +634,73 @@
           throw new Error(data.error || `Request failed (${res.status})`);
         }
         return data;
+      }
+
+      function artifactLookupValue() {
+        const raw = document.getElementById("artifactLookupInput")?.value || "";
+        const value = raw.trim();
+        if (!value) {
+          throw new Error("Enter a lead ID or call ID first.");
+        }
+        return value;
+      }
+
+      function openDownloadLink(href) {
+        const a = document.createElement("a");
+        a.href = href;
+        a.target = "_blank";
+        a.rel = "noreferrer";
+        a.click();
+      }
+
+      function renderArtifactPullResult(data) {
+        const root = document.getElementById("artifactPullResult");
+        if (!root) return;
+
+        const available = data.audio?.available || {};
+        const hasTranscript = Boolean(data.hasTranscript);
+        const hasAudio = Boolean(data.hasAudio);
+        root.innerHTML = `
+          <div class="space-y-1">
+            <p><strong>Lead:</strong> ${escapeHtml(data.leadId || "--")} | <strong>Call:</strong> ${escapeHtml(data.callId || "--")}</p>
+            <p><strong>Transcript:</strong> ${hasTranscript ? "Ready" : "Not found"} | <strong>Audio:</strong> ${hasAudio ? "Ready" : "Not found"}</p>
+            <p><strong>Available URLs:</strong> any=${escapeHtml(String((available.any || []).length))}, mp3=${escapeHtml(String((available.mp3 || []).length))}, wav=${escapeHtml(String((available.wav || []).length))}</p>
+            <p><strong>Vapi Pull:</strong> ${data.fetchedFromVapi ? "Fetched" : "Not fetched"} ${data.updatedLead ? "(lead updated)" : ""}</p>
+            ${data.error ? `<p class="text-amber-700"><strong>Note:</strong> ${escapeHtml(String(data.error))}</p>` : ""}
+          </div>
+        `;
+      }
+
+      async function pullVapiArtifactsAndRender(lookup) {
+        const data = await postJson(`/api/calls/${encodeURIComponent(lookup)}/pull-artifacts`, {});
+        renderArtifactPullResult(data);
+        return data;
+      }
+
+      async function oneClickArtifactAction(kind) {
+        const lookup = artifactLookupValue();
+        const data = await pullVapiArtifactsAndRender(lookup);
+        const links = data.links || {};
+
+        if (kind === "transcript") {
+          if (!data.hasTranscript) throw new Error("Transcript was not found on this call yet.");
+          openDownloadLink(links.transcript || `/api/calls/${encodeURIComponent(lookup)}/transcript.txt?refresh=1`);
+          return;
+        }
+
+        if (kind === "mp3") {
+          if (!data.hasAudio) throw new Error("Audio recording is not available yet.");
+          openDownloadLink(links.mp3 || `/api/calls/${encodeURIComponent(lookup)}/audio.mp3?refresh=1`);
+          return;
+        }
+
+        if (kind === "wav") {
+          if (!data.hasAudio) throw new Error("Audio recording is not available yet.");
+          openDownloadLink(links.wav || `/api/calls/${encodeURIComponent(lookup)}/audio.wav?refresh=1`);
+          return;
+        }
+
+        openDownloadLink(links.trace || `/api/calls/${encodeURIComponent(lookup)}/trace`);
       }
 
       async function readFile(file) {
@@ -1319,6 +1406,42 @@
           try {
             await refreshRouteHealth();
             showToast(state.routeHealth.healthy ? "Healthcheck passed." : "Healthcheck found route issues.", !state.routeHealth.healthy);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("artifactTranscriptBtn").addEventListener("click", async () => {
+          try {
+            await oneClickArtifactAction("transcript");
+            showToast("Transcript pull complete.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("artifactMp3Btn").addEventListener("click", async () => {
+          try {
+            await oneClickArtifactAction("mp3");
+            showToast("MP3 download opened.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("artifactWavBtn").addEventListener("click", async () => {
+          try {
+            await oneClickArtifactAction("wav");
+            showToast("WAV download opened.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("artifactTraceBtn").addEventListener("click", async () => {
+          try {
+            await oneClickArtifactAction("trace");
+            showToast("Trace opened.");
           } catch (error) {
             showToast(String(error), true);
           }

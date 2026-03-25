@@ -450,6 +450,388 @@ function extractRecordingUrl(payload: Record<string, unknown>): string | undefin
   return undefined;
 }
 
+type AudioFormat = "mp3" | "wav";
+
+interface AudioUrlSet {
+  any: string[];
+  mp3: string[];
+  wav: string[];
+}
+
+interface VapiArtifactSnapshot {
+  transcript?: string;
+  audio: AudioUrlSet;
+  startedAt?: string;
+  endedAt?: string;
+  status?: string;
+}
+
+function createAudioUrlSet(): AudioUrlSet {
+  return { any: [], mp3: [], wav: [] };
+}
+
+function inferAudioFormatFromUrl(url: string): AudioFormat | undefined {
+  const lowered = url.toLowerCase();
+  if (lowered.includes(".mp3")) return "mp3";
+  if (lowered.includes(".wav")) return "wav";
+  return undefined;
+}
+
+function addAudioCandidate(set: AudioUrlSet, candidate: unknown, preferredFormat?: AudioFormat): void {
+  const url = asHttpUrl(candidate);
+  if (!url) return;
+  if (!set.any.includes(url)) {
+    set.any.push(url);
+  }
+
+  const inferred = inferAudioFormatFromUrl(url) || preferredFormat;
+  if (inferred === "mp3" && !set.mp3.includes(url)) {
+    set.mp3.push(url);
+  }
+  if (inferred === "wav" && !set.wav.includes(url)) {
+    set.wav.push(url);
+  }
+}
+
+function collectAudioCandidates(payload: Record<string, unknown>): AudioUrlSet {
+  const set = createAudioUrlSet();
+  const paths: Array<{ path: string[]; preferredFormat?: AudioFormat }> = [
+    { path: ["recordingUrl"] },
+    { path: ["stereoRecordingUrl"], preferredFormat: "wav" },
+    { path: ["artifact", "recordingUrl"] },
+    { path: ["artifact", "stereoRecordingUrl"], preferredFormat: "wav" },
+    { path: ["analysis", "recordingUrl"] },
+    { path: ["call", "recordingUrl"] },
+    { path: ["call", "stereoRecordingUrl"], preferredFormat: "wav" },
+    { path: ["call", "artifact", "recordingUrl"] },
+    { path: ["call", "artifact", "stereoRecordingUrl"], preferredFormat: "wav" }
+  ];
+
+  for (const row of paths) {
+    addAudioCandidate(set, pickPathString(payload, row.path), row.preferredFormat);
+  }
+
+  return set;
+}
+
+function mergeAudioSets(base: AudioUrlSet, incoming: AudioUrlSet): AudioUrlSet {
+  const merged = createAudioUrlSet();
+  for (const list of [base.any, incoming.any]) {
+    for (const url of list) {
+      addAudioCandidate(merged, url);
+    }
+  }
+  for (const list of [base.mp3, incoming.mp3]) {
+    for (const url of list) {
+      addAudioCandidate(merged, url, "mp3");
+    }
+  }
+  for (const list of [base.wav, incoming.wav]) {
+    for (const url of list) {
+      addAudioCandidate(merged, url, "wav");
+    }
+  }
+  return merged;
+}
+
+function extractTranscriptFromVapiCall(payload: Record<string, unknown>): string | undefined {
+  const callNode = asObject(payload.call) || payload;
+  const artifact = asObject(callNode.artifact) || asObject(payload.artifact) || {};
+  const analysis = asObject(callNode.analysis) || asObject(payload.analysis) || {};
+  const summaryObj = asObject(analysis.summary) || {};
+
+  const direct =
+    safeString(callNode.transcript) ||
+    safeString(payload.transcript) ||
+    safeString(artifact.transcript) ||
+    safeString(callNode.transcriptText) ||
+    safeString(analysis.summary) ||
+    safeString(summaryObj.transcript) ||
+    safeString(summaryObj.summary);
+  if (direct) return direct.slice(0, 8000);
+
+  const messageLists: unknown[] = [
+    artifact.messages,
+    (asObject(callNode.artifact) || {}).messages,
+    callNode.messages,
+    payload.messages
+  ];
+
+  for (const list of messageLists) {
+    if (!Array.isArray(list)) continue;
+    const joined = list
+      .map((row) => asObject(row))
+      .map((row) => {
+        if (!row) return undefined;
+        return safeString(row.transcript) || safeString(row.content) || safeString(row.message);
+      })
+      .filter((value): value is string => Boolean(value))
+      .join("\n");
+    if (joined) return joined.slice(0, 8000);
+  }
+
+  return undefined;
+}
+
+function extractVapiArtifacts(payload: Record<string, unknown>): VapiArtifactSnapshot {
+  const callNode = asObject(payload.call) || payload;
+  return {
+    transcript: extractTranscriptFromVapiCall(payload),
+    audio: collectAudioCandidates(payload),
+    startedAt: safeString(callNode.startedAt) || safeString(payload.startedAt),
+    endedAt: safeString(callNode.endedAt) || safeString(payload.endedAt),
+    status: safeString(callNode.status) || safeString(payload.status)
+  };
+}
+
+function deriveAudioFormatCandidates(url: string, format: AudioFormat): string[] {
+  const out: string[] = [];
+  const push = (value: string | undefined) => {
+    const normalized = asHttpUrl(value);
+    if (!normalized) return;
+    if (!out.includes(normalized)) out.push(normalized);
+  };
+
+  push(url);
+  try {
+    const parsed = new URL(url);
+    const currentExt = path.extname(parsed.pathname).toLowerCase();
+    const nextExt = `.${format}`;
+    if (currentExt && currentExt !== nextExt) {
+      parsed.pathname = parsed.pathname.slice(0, -currentExt.length) + nextExt;
+      push(parsed.toString());
+    }
+
+    const queryVariants = ["format", "audioFormat", "fileFormat"];
+    for (const key of queryVariants) {
+      const copy = new URL(url);
+      copy.searchParams.set(key, format);
+      push(copy.toString());
+    }
+  } catch {
+    // Keep original URL only when parsing fails.
+  }
+
+  return out;
+}
+
+async function isReachableAudioUrl(url: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const head = await fetch(url, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: controller.signal
+    });
+    if (head.ok) return true;
+    if (head.status === 405 || head.status === 403) {
+      const get = await fetch(url, {
+        method: "GET",
+        headers: { Range: "bytes=0-0" },
+        redirect: "follow",
+        signal: controller.signal
+      });
+      return get.ok || get.status === 206;
+    }
+    return false;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function pickFirstReachableAudioUrl(candidates: string[]): Promise<string | undefined> {
+  const deduped = Array.from(new Set(candidates.map((value) => asHttpUrl(value)).filter((v): v is string => Boolean(v))));
+  for (const candidate of deduped) {
+    if (await isReachableAudioUrl(candidate)) {
+      return candidate;
+    }
+  }
+  return deduped[0];
+}
+
+async function chooseAudioUrlFromSet(audio: AudioUrlSet, format?: AudioFormat): Promise<string | undefined> {
+  const preferred = format === "mp3" ? audio.mp3 : format === "wav" ? audio.wav : audio.any;
+  let url: string | undefined = format ? preferred[0] : preferred[0] || audio.any[0];
+
+  if (!url && format) {
+    const variants = audio.any.flatMap((candidate) => deriveAudioFormatCandidates(candidate, format));
+    url = await pickFirstReachableAudioUrl(variants);
+  }
+
+  return url;
+}
+
+async function fetchVapiArtifactsByCallId(callId: string): Promise<{
+  ok: boolean;
+  statusCode: number;
+  error?: string;
+  artifacts?: VapiArtifactSnapshot;
+  raw?: Record<string, unknown>;
+}> {
+  const normalizedCallId = safeString(callId);
+  if (!normalizedCallId) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: "callId is required"
+    };
+  }
+
+  const remote = await fetchVapiCallById(normalizedCallId);
+  if (!remote.ok || !remote.data) {
+    return {
+      ok: false,
+      statusCode: remote.status >= 400 && remote.status < 600 ? remote.status : 502,
+      error: remote.error || "Failed to fetch call from Vapi"
+    };
+  }
+
+  return {
+    ok: true,
+    statusCode: remote.status,
+    artifacts: extractVapiArtifacts(remote.data),
+    raw: remote.data
+  };
+}
+
+async function refreshLeadArtifactsFromVapi(
+  lead: Lead
+): Promise<{
+  lead: Lead;
+  fetched: boolean;
+  updated: boolean;
+  statusCode: number;
+  error?: string;
+  artifacts: VapiArtifactSnapshot;
+}> {
+  const localArtifacts: VapiArtifactSnapshot = {
+    transcript: safeString(lead.transcript),
+    audio: createAudioUrlSet(),
+    startedAt: lead.callAttemptedAt,
+    endedAt: lead.callEndedAt
+  };
+  addAudioCandidate(localArtifacts.audio, lead.recordingUrl);
+
+  if (!lead.callId) {
+    return {
+      lead,
+      fetched: false,
+      updated: false,
+      statusCode: 0,
+      error: "Lead does not have a callId yet",
+      artifacts: localArtifacts
+    };
+  }
+
+  const remote = await fetchVapiCallById(lead.callId);
+  if (!remote.ok || !remote.data) {
+    return {
+      lead,
+      fetched: false,
+      updated: false,
+      statusCode: remote.status,
+      error: remote.error || "Failed to fetch call from Vapi",
+      artifacts: localArtifacts
+    };
+  }
+
+  const fetchedArtifacts = extractVapiArtifacts(remote.data);
+  const mergedAudio = mergeAudioSets(localArtifacts.audio, fetchedArtifacts.audio);
+  const mergedTranscript = fetchedArtifacts.transcript || localArtifacts.transcript;
+  const primaryAudio = mergedAudio.any[0];
+  const patch: Partial<Lead> = {};
+
+  if (mergedTranscript && (!lead.transcript || mergedTranscript.length >= lead.transcript.length)) {
+    patch.transcript = mergedTranscript;
+    patch.transcriptSummary = mergedTranscript.slice(0, 300);
+  }
+
+  if (primaryAudio && primaryAudio !== lead.recordingUrl) {
+    patch.recordingUrl = primaryAudio;
+  }
+
+  if (fetchedArtifacts.endedAt && !lead.callEndedAt) {
+    patch.callEndedAt = fetchedArtifacts.endedAt;
+  }
+
+  if (fetchedArtifacts.status) {
+    const normalized = fetchedArtifacts.status.toLowerCase();
+    if (lead.status === "dialing" && ["ended", "completed", "failed", "cancelled", "canceled"].includes(normalized)) {
+      patch.status = lead.outcome === "booked" ? "booked" : "completed";
+    }
+  }
+
+  const updatedLead =
+    Object.keys(patch).length > 0
+      ? (await patchLead(lead.id, patch)) || { ...lead, ...patch, updatedAt: nowIso() }
+      : { ...lead };
+
+  return {
+    lead: updatedLead,
+    fetched: true,
+    updated: Object.keys(patch).length > 0,
+    statusCode: remote.status,
+    artifacts: {
+      ...fetchedArtifacts,
+      transcript: updatedLead.transcript || mergedTranscript,
+      audio: mergedAudio
+    }
+  };
+}
+
+async function resolveAudioDownloadUrl(
+  lead: Lead,
+  format?: AudioFormat,
+  refresh = false
+): Promise<{
+  lead: Lead;
+  url?: string;
+  refreshed: boolean;
+  error?: string;
+  statusCode?: number;
+  audio: AudioUrlSet;
+}> {
+  let workingLead = lead;
+  const local = createAudioUrlSet();
+  addAudioCandidate(local, lead.recordingUrl);
+  let audio = local;
+  let refreshError: string | undefined;
+  let refreshStatusCode: number | undefined;
+  let refreshed = false;
+
+  const hasFormat =
+    format === "mp3" ? audio.mp3.length > 0 : format === "wav" ? audio.wav.length > 0 : audio.any.length > 0;
+  const shouldRefresh = refresh || !hasFormat;
+
+  if (shouldRefresh && lead.callId) {
+    const pulled = await refreshLeadArtifactsFromVapi(lead);
+    workingLead = pulled.lead;
+    audio = mergeAudioSets(audio, pulled.artifacts.audio);
+    refreshed = pulled.fetched;
+    refreshError = pulled.error;
+    refreshStatusCode = pulled.statusCode;
+  }
+
+  let url: string | undefined = await chooseAudioUrlFromSet(audio, format);
+
+  if (!url && format && workingLead.recordingUrl) {
+    const variants = deriveAudioFormatCandidates(workingLead.recordingUrl, format);
+    url = await pickFirstReachableAudioUrl(variants);
+  }
+
+  return {
+    lead: workingLead,
+    url,
+    refreshed,
+    error: refreshError,
+    statusCode: refreshStatusCode,
+    audio
+  };
+}
+
 async function findLeadByIdentity(input: { leadId?: string; phone?: string; email?: string }): Promise<Lead | undefined> {
   return withState((state) => {
     if (input.leadId && state.leads[input.leadId]) {
@@ -2900,11 +3282,219 @@ export function createServer() {
     });
   });
 
+  const handleDirectVapiAudioDownload = async (
+    req: Request,
+    res: Response,
+    forcedFormat?: AudioFormat
+  ): Promise<void> => {
+    const callId = safeString(req.params.callId);
+    if (!callId) {
+      res.status(400).json({ ok: false, error: "callId is required" });
+      return;
+    }
+
+    const pulled = await fetchVapiArtifactsByCallId(callId);
+    if (!pulled.ok || !pulled.artifacts) {
+      res.status(pulled.statusCode || 502).json({
+        ok: false,
+        error: pulled.error || "Failed to fetch Vapi call artifacts",
+        callId
+      });
+      return;
+    }
+
+    const requestedRaw = (forcedFormat || safeString(req.query.format)?.toLowerCase()) as string | undefined;
+    const format: AudioFormat | undefined =
+      requestedRaw === "mp3" || requestedRaw === "wav" ? requestedRaw : undefined;
+    const url = await chooseAudioUrlFromSet(pulled.artifacts.audio, format);
+    if (!url) {
+      res.status(404).json({
+        ok: false,
+        error: "Audio recording URL not available for this call yet",
+        callId,
+        requestedFormat: format,
+        available: pulled.artifacts.audio
+      });
+      return;
+    }
+
+    res.redirect(302, url);
+  };
+
+  app.get("/api/vapi/calls/:callId/artifacts", async (req: Request, res: Response) => {
+    const callId = safeString(req.params.callId);
+    if (!callId) {
+      res.status(400).json({ ok: false, error: "callId is required" });
+      return;
+    }
+
+    const pulled = await fetchVapiArtifactsByCallId(callId);
+    if (!pulled.ok || !pulled.artifacts) {
+      res.status(pulled.statusCode || 502).json({
+        ok: false,
+        error: pulled.error || "Failed to fetch Vapi call artifacts",
+        callId
+      });
+      return;
+    }
+
+    const callIdEncoded = encodeURIComponent(callId);
+    res.json({
+      ok: true,
+      callId,
+      statusCode: pulled.statusCode,
+      artifacts: pulled.artifacts,
+      links: {
+        transcript: `/api/vapi/calls/${callIdEncoded}/transcript.txt`,
+        audio: `/api/vapi/calls/${callIdEncoded}/audio`,
+        mp3: `/api/vapi/calls/${callIdEncoded}/audio.mp3`,
+        wav: `/api/vapi/calls/${callIdEncoded}/audio.wav`
+      },
+      raw: pulled.raw
+    });
+  });
+
+  app.get("/api/vapi/calls/:callId/transcript.txt", async (req: Request, res: Response) => {
+    const callId = safeString(req.params.callId);
+    if (!callId) {
+      res.status(400).json({ ok: false, error: "callId is required" });
+      return;
+    }
+
+    const pulled = await fetchVapiArtifactsByCallId(callId);
+    if (!pulled.ok || !pulled.artifacts) {
+      res.status(pulled.statusCode || 502).json({
+        ok: false,
+        error: pulled.error || "Failed to fetch Vapi call artifacts",
+        callId
+      });
+      return;
+    }
+    if (!pulled.artifacts.transcript) {
+      res.status(404).json({
+        ok: false,
+        error: "Transcript not available for this call yet",
+        callId
+      });
+      return;
+    }
+
+    const fileName = `${callId}-transcript.txt`;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=\"${fileName}\"`);
+    res.send(pulled.artifacts.transcript);
+  });
+
+  app.get("/api/vapi/calls/:callId/audio", async (req: Request, res: Response) => {
+    await handleDirectVapiAudioDownload(req, res);
+  });
+
+  app.get("/api/vapi/calls/:callId/audio.mp3", async (req: Request, res: Response) => {
+    await handleDirectVapiAudioDownload(req, res, "mp3");
+  });
+
+  app.get("/api/vapi/calls/:callId/audio.wav", async (req: Request, res: Response) => {
+    await handleDirectVapiAudioDownload(req, res, "wav");
+  });
+
+  app.post("/api/calls/:leadId/pull-artifacts", async (req: Request, res: Response) => {
+    const lookupId = safeString(req.params.leadId) || "";
+    const lead = await findLeadByIdOrCallId(lookupId);
+    if (!lead) {
+      const direct = await fetchVapiArtifactsByCallId(lookupId);
+      if (!direct.ok || !direct.artifacts) {
+        res.status(direct.statusCode || 404).json({
+          ok: false,
+          error: direct.error || "Lead not found and Vapi call lookup failed",
+          callId: lookupId
+        });
+        return;
+      }
+
+      runtimeInfo("vapi", "manual artifact pull completed (direct call lookup)", {
+        leadId: "",
+        callId: lookupId,
+        fetched: true,
+        updated: false,
+        hasTranscript: Boolean(direct.artifacts.transcript),
+        audioCount: direct.artifacts.audio.any.length,
+        statusCode: direct.statusCode
+      });
+
+      const callIdEncoded = encodeURIComponent(lookupId);
+      res.json({
+        ok: true,
+        leadId: undefined,
+        callId: lookupId,
+        fetchedFromVapi: true,
+        updatedLead: false,
+        statusCode: direct.statusCode,
+        hasTranscript: Boolean(direct.artifacts.transcript),
+        hasAudio: Boolean(direct.artifacts.audio.any.length > 0),
+        audio: {
+          available: direct.artifacts.audio,
+          recordingUrl: direct.artifacts.audio.any[0]
+        },
+        links: {
+          transcript: `/api/vapi/calls/${callIdEncoded}/transcript.txt`,
+          audio: `/api/vapi/calls/${callIdEncoded}/audio`,
+          mp3: `/api/vapi/calls/${callIdEncoded}/audio.mp3`,
+          wav: `/api/vapi/calls/${callIdEncoded}/audio.wav`,
+          trace: `/api/vapi/calls/${callIdEncoded}/artifacts`,
+          vapiReport: `/api/vapi/calls/${callIdEncoded}/artifacts`
+        }
+      });
+      return;
+    }
+
+    const pulled = await refreshLeadArtifactsFromVapi(lead);
+    const routeId = encodeURIComponent(pulled.lead.id);
+    runtimeInfo("vapi", "manual artifact pull completed", {
+      leadId: pulled.lead.id,
+      callId: pulled.lead.callId,
+      fetched: pulled.fetched,
+      updated: pulled.updated,
+      hasTranscript: Boolean(pulled.lead.transcript),
+      audioCount: pulled.artifacts.audio.any.length,
+      statusCode: pulled.statusCode,
+      error: pulled.error
+    });
+
+    res.json({
+      ok: true,
+      leadId: pulled.lead.id,
+      callId: pulled.lead.callId,
+      fetchedFromVapi: pulled.fetched,
+      updatedLead: pulled.updated,
+      statusCode: pulled.statusCode,
+      error: pulled.error,
+      hasTranscript: Boolean(pulled.lead.transcript),
+      hasAudio: Boolean(pulled.artifacts.audio.any.length > 0),
+      audio: {
+        available: pulled.artifacts.audio,
+        recordingUrl: pulled.lead.recordingUrl
+      },
+      links: {
+        transcript: `/api/calls/${routeId}/transcript.txt?refresh=1`,
+        audio: `/api/calls/${routeId}/audio?refresh=1`,
+        mp3: `/api/calls/${routeId}/audio.mp3?refresh=1`,
+        wav: `/api/calls/${routeId}/audio.wav?refresh=1`,
+        trace: `/api/calls/${routeId}/trace`,
+        vapiReport: `/api/calls/${routeId}/vapi-report`
+      }
+    });
+  });
+
   app.get("/api/calls/:leadId/transcript.txt", async (req: Request, res: Response) => {
-    const lead = await findLeadByIdOrCallId(req.params.leadId);
+    let lead = await findLeadByIdOrCallId(req.params.leadId);
     if (!lead) {
       res.status(404).json({ ok: false, error: "Lead not found" });
       return;
+    }
+    const shouldRefresh = asBool(req.query.refresh, false) || !lead.transcript;
+    if (shouldRefresh && lead.callId) {
+      const pulled = await refreshLeadArtifactsFromVapi(lead);
+      lead = pulled.lead;
     }
     if (!lead.transcript) {
       res.status(404).json({ ok: false, error: "Transcript not available for this call yet" });
@@ -2919,22 +3509,45 @@ export function createServer() {
     res.send(lead.transcript);
   });
 
-  app.get("/api/calls/:leadId/audio", async (req: Request, res: Response) => {
+  const handleAudioDownload = async (req: Request, res: Response, forcedFormat?: AudioFormat): Promise<void> => {
     const lead = await findLeadByIdOrCallId(req.params.leadId);
     if (!lead) {
       res.status(404).json({ ok: false, error: "Lead not found" });
       return;
     }
-    if (!lead.recordingUrl) {
-      res.status(404).json({ ok: false, error: "Audio recording URL not available for this call yet" });
+
+    const requestedRaw = (forcedFormat || safeString(req.query.format)?.toLowerCase()) as string | undefined;
+    const format: AudioFormat | undefined =
+      requestedRaw === "mp3" || requestedRaw === "wav" ? requestedRaw : undefined;
+    const shouldRefresh = asBool(req.query.refresh, false) || !lead.recordingUrl;
+    const resolved = await resolveAudioDownloadUrl(lead, format, shouldRefresh);
+
+    if (!resolved.url) {
+      const status = resolved.statusCode && resolved.statusCode >= 400 && resolved.statusCode < 600 ? resolved.statusCode : 404;
+      res.status(status).json({
+        ok: false,
+        error: resolved.error || "Audio recording URL not available for this call yet",
+        requestedFormat: format,
+        available: resolved.audio,
+        leadId: lead.id,
+        callId: lead.callId
+      });
       return;
     }
-    const url = asHttpUrl(lead.recordingUrl);
-    if (!url) {
-      res.status(400).json({ ok: false, error: "Stored recording URL is invalid" });
-      return;
-    }
-    res.redirect(302, url);
+
+    res.redirect(302, resolved.url);
+  };
+
+  app.get("/api/calls/:leadId/audio", async (req: Request, res: Response) => {
+    await handleAudioDownload(req, res);
+  });
+
+  app.get("/api/calls/:leadId/audio.mp3", async (req: Request, res: Response) => {
+    await handleAudioDownload(req, res, "mp3");
+  });
+
+  app.get("/api/calls/:leadId/audio.wav", async (req: Request, res: Response) => {
+    await handleAudioDownload(req, res, "wav");
   });
 
   app.get("/api/calls/:leadId/vapi-report", async (req: Request, res: Response) => {
