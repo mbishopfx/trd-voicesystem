@@ -8,17 +8,31 @@ import type { IngestSummary, Lead } from "./types.js";
 import { coerceString, firstDefined, hashShort, isMainModule, nowIso, parseBoolean } from "./utils.js";
 
 const aliases = {
-  phone: ["phone", "phone_number", "mobile", "mobile_phone"],
-  firstName: ["first_name", "firstname", "first"],
-  lastName: ["last_name", "lastname", "last"],
-  company: ["company", "business", "business_name"],
-  email: ["email", "email_address"],
-  timezone: ["timezone", "time_zone", "tz"],
-  campaign: ["campaign", "campaign_name", "list_name"],
+  phone: [
+    "phone",
+    "phone_number",
+    "mobile",
+    "mobile_phone",
+    "cell",
+    "cell_phone",
+    "business_phone",
+    "work_phone",
+    "direct_phone",
+    "direct_dial",
+    "telephone",
+    "tel"
+  ],
+  firstName: ["first_name", "firstname", "first", "given_name", "contact_first_name"],
+  lastName: ["last_name", "lastname", "last", "surname", "family_name", "contact_last_name"],
+  fullName: ["full_name", "fullname", "contact_name", "name", "contact"],
+  company: ["company", "company_name", "business", "business_name", "organization", "organisation", "account_name"],
+  email: ["email", "email_address", "business_email", "work_email", "company_email"],
+  timezone: ["timezone", "time_zone", "tz", "timezone_name", "time_zone_name"],
+  campaign: ["campaign", "campaign_name", "list_name", "list", "source"],
   findings: ["findings", "audit_summary", "discovery", "pain_point"],
-  notes: ["notes", "note"],
-  dnc: ["dnc", "do_not_call", "unsubscribed"],
-  optIn: ["opt_in", "optin", "consent", "permission", "warm_lead"]
+  notes: ["notes", "note", "comments", "comment"],
+  dnc: ["dnc", "do_not_call", "do_not_contact", "unsubscribed", "opt_out"],
+  optIn: ["opt_in", "optin", "consent", "permission", "warm_lead", "opted_in", "permission_to_contact"]
 } as const;
 
 type CsvRow = Record<string, unknown>;
@@ -26,7 +40,38 @@ interface IngestOptions {
   trustImportLeads?: boolean;
 }
 
+const normalizedRowCache = new WeakMap<CsvRow, Record<string, unknown>>();
+
+function normalizeHeaderKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function isMissing(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string" && !value.trim()) return true;
+  return false;
+}
+
+function normalizedRow(row: CsvRow): Record<string, unknown> {
+  const cached = normalizedRowCache.get(row);
+  if (cached) return cached;
+
+  const map: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    const normalized = normalizeHeaderKey(key);
+    if (!normalized) continue;
+    if (!(normalized in map) || (isMissing(map[normalized]) && !isMissing(value))) {
+      map[normalized] = value;
+    }
+  }
+
+  normalizedRowCache.set(row, map);
+  return map;
+}
+
 function pick(row: CsvRow, keys: readonly string[]): unknown {
+  const normalized = normalizedRow(row);
+
   for (const key of keys) {
     const direct = row[key];
     if (direct !== undefined) return direct;
@@ -34,24 +79,174 @@ function pick(row: CsvRow, keys: readonly string[]): unknown {
     // Case-insensitive fallback for inconsistent CSV headers.
     const found = Object.entries(row).find(([k]) => k.trim().toLowerCase() === key.toLowerCase());
     if (found) return found[1];
+
+    const normalizedMatch = normalized[normalizeHeaderKey(key)];
+    if (normalizedMatch !== undefined) return normalizedMatch;
   }
   return undefined;
 }
 
+function pickByHeaderHint(
+  row: CsvRow,
+  options: {
+    includeAny: string[];
+    includeAll?: string[];
+    exclude?: string[];
+    validator?: (value: string) => boolean;
+  }
+): unknown {
+  const includeAny = options.includeAny.map(normalizeHeaderKey).filter(Boolean);
+  const includeAll = (options.includeAll || []).map(normalizeHeaderKey).filter(Boolean);
+  const exclude = (options.exclude || []).map(normalizeHeaderKey).filter(Boolean);
+
+  for (const [header, raw] of Object.entries(row)) {
+    const value = coerceString(raw);
+    if (!value) continue;
+
+    const headerNorm = normalizeHeaderKey(header);
+    if (!headerNorm) continue;
+    if (exclude.some((token) => token && headerNorm.includes(token))) continue;
+    if (includeAny.length > 0 && !includeAny.some((token) => token && headerNorm.includes(token))) continue;
+    if (includeAll.length > 0 && !includeAll.every((token) => token && headerNorm.includes(token))) continue;
+    if (options.validator && !options.validator(value)) continue;
+    return raw;
+  }
+
+  return undefined;
+}
+
+function isEmailLike(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function splitPersonalName(fullName?: string): { firstName?: string; lastName?: string } {
+  const value = coerceString(fullName);
+  if (!value) return {};
+  const parts = value.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return {};
+  if (parts.length === 1) return { firstName: parts[0] };
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(" ")
+  };
+}
+
 function buildLead(row: CsvRow, sourceFile: string, sourceRow: number, options?: IngestOptions): Lead | undefined {
-  const phone = normalizePhone(pick(row, aliases.phone));
+  const phone = normalizePhone(
+    firstDefined(
+      pick(row, aliases.phone),
+      pickByHeaderHint(row, {
+        includeAny: ["phone", "mobile", "cell", "telephone", "tel"],
+        exclude: ["quality", "score", "status", "country", "type", "extension", "ext", "url"],
+        validator: (value) => Boolean(normalizePhone(value))
+      })
+    )
+  );
   if (!phone) return undefined;
 
   const now = nowIso();
-  const firstName = coerceString(pick(row, aliases.firstName));
-  const lastName = coerceString(pick(row, aliases.lastName));
-  const company = coerceString(pick(row, aliases.company));
+  const fullName = coerceString(
+    firstDefined(
+      pick(row, aliases.fullName),
+      pickByHeaderHint(row, {
+        includeAny: ["name"],
+        exclude: ["company", "business", "job", "title", "industry"]
+      })
+    )
+  );
+  const parsedName = splitPersonalName(fullName);
+
+  const firstName =
+    coerceString(
+      firstDefined(
+        pick(row, aliases.firstName),
+        pickByHeaderHint(row, {
+          includeAny: ["firstname"],
+          includeAll: ["first", "name"],
+          exclude: ["company", "business"]
+        })
+      )
+    ) || parsedName.firstName;
+
+  const lastName =
+    coerceString(
+      firstDefined(
+        pick(row, aliases.lastName),
+        pickByHeaderHint(row, {
+          includeAny: ["lastname", "surname"],
+          includeAll: ["last", "name"],
+          exclude: ["company", "business"]
+        })
+      )
+    ) || parsedName.lastName;
+
+  const company = coerceString(
+    firstDefined(
+      pick(row, aliases.company),
+      pickByHeaderHint(row, {
+        includeAny: ["company", "business", "organization", "organisation", "account", "employer"],
+        exclude: ["url", "website", "domain", "industry", "country", "city", "state", "size", "range", "employee"]
+      })
+    )
+  );
+  const emailRaw = coerceString(
+    firstDefined(
+      pick(row, aliases.email),
+      pickByHeaderHint(row, {
+        includeAny: ["email"],
+        exclude: ["quality", "score", "status", "verified", "validation"],
+        validator: isEmailLike
+      })
+    )
+  );
+  const email = emailRaw && isEmailLike(emailRaw) ? emailRaw : undefined;
 
   const importTrusted = options?.trustImportLeads ?? config.trustAllImports;
-  const optInRaw = parseBoolean(pick(row, aliases.optIn));
+  const optInRaw = parseBoolean(
+    firstDefined(
+      pick(row, aliases.optIn),
+      pickByHeaderHint(row, {
+        includeAny: ["optin", "consent", "permission", "subscribed", "warm"],
+        exclude: ["optout", "unsubscribe", "dnc", "donotcall"]
+      })
+    )
+  );
   const optIn = importTrusted ? true : optInRaw;
-  const dnc = parseBoolean(pick(row, aliases.dnc));
+  const dnc = parseBoolean(
+    firstDefined(
+      pick(row, aliases.dnc),
+      pickByHeaderHint(row, {
+        includeAny: ["dnc", "donotcall", "donotcontact", "unsubscribe", "optout", "blacklist"]
+      })
+    )
+  );
   const status = dnc || (config.requireOptIn && !optIn) ? "blocked" : "queued";
+
+  const industry = coerceString(
+    pickByHeaderHint(row, {
+      includeAny: ["industry"],
+      exclude: ["code", "id"]
+    })
+  );
+  const title = coerceString(
+    pickByHeaderHint(row, {
+      includeAny: ["jobtitle", "title", "role"],
+      exclude: ["company", "business"]
+    })
+  );
+
+  const findings = coerceString(
+    firstDefined(
+      pick(row, aliases.findings),
+      industry ? `Industry: ${industry}` : undefined
+    )
+  );
+  const notes = coerceString(
+    firstDefined(
+      pick(row, aliases.notes),
+      title ? `Role: ${title}` : undefined
+    )
+  );
 
   return {
     id: hashShort(phone),
@@ -59,13 +254,29 @@ function buildLead(row: CsvRow, sourceFile: string, sourceRow: number, options?:
     firstName,
     lastName,
     company,
-    email: coerceString(pick(row, aliases.email)),
-    timezone: firstDefined(pick(row, aliases.timezone), config.defaultTimezone) || config.defaultTimezone,
-    campaign: firstDefined(pick(row, aliases.campaign), config.campaignName) || config.campaignName,
+    email,
+    timezone:
+      firstDefined(
+        pick(row, aliases.timezone),
+        pickByHeaderHint(row, {
+          includeAny: ["timezone", "tz"],
+          exclude: ["offsetminutes", "offsetseconds"]
+        }),
+        config.defaultTimezone
+      ) || config.defaultTimezone,
+    campaign:
+      firstDefined(
+        pick(row, aliases.campaign),
+        pickByHeaderHint(row, {
+          includeAny: ["campaign", "list", "source"],
+          exclude: ["sourcefile", "sourcesystem"]
+        }),
+        config.campaignName
+      ) || config.campaignName,
     sourceFile,
     sourceRow,
-    findings: coerceString(pick(row, aliases.findings)),
-    notes: coerceString(pick(row, aliases.notes)),
+    findings,
+    notes,
     optIn,
     dnc,
     status,
