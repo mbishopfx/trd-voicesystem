@@ -101,6 +101,7 @@ Twilio fallback (if Vapi phone number UUID is unavailable):
 - `RETARGET_AUTO_EXPORT=true` (recommended)
 - `WIN_SMS_ENABLED=true` (recommended)
 - `WIN_SMS_TEMPLATE=...` (supports `{{firstName}}`, `{{bookingUrl}}`, `{{campaignName}}`)
+- `PROSPECTOR_WIN_SMS_TEMPLATE=...` (supports `{{firstName}}`, `{{liveLink}}`, `{{bookingUrl}}`, `{{campaignName}}`)
 - `TRUST_ALL_IMPORTS=true` (recommended when uploaded/imported lists are already approved to call)
 - `VAPI_PROSPECTOR_ASSISTANT_ID` (required for Prospector phase 5 specialized calling)
 - `GEMINI_PROSPECTOR_MODEL=gemini-3.0-flash` (recommended for Prospector landing page generation)

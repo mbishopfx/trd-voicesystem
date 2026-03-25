@@ -64,6 +64,7 @@ import {
   fetchTwilioMessageBySid,
   isTwilioSmsConfigured,
   listTwilioMessages,
+  sendProspectorFollowUpSms,
   sendSmsMessage,
   sendWinBookingSms
 } from "./integrations/twilioSms.js";
@@ -1162,29 +1163,40 @@ async function maybeSendWinSms(lead: Lead, outcome?: string): Promise<void> {
   if (!latest) return;
 
   if (!isWinOutcome(outcome || latest.outcome)) return;
-  if (!latest.optIn || latest.dnc) return;
-  if (!canSendWinSms()) return;
+  if (latest.dnc) return;
+  const isProspectorLead = latest.sourceFile === "prospector-dashboard";
+  if (!latest.optIn && !isProspectorLead) return;
+  if (!isTwilioSmsConfigured() || !resolvedBookingUrl()) return;
+  if (!isProspectorLead && !canSendWinSms()) return;
   if (latest.winSmsSentAt) return;
 
   try {
-    const sent = await sendWinBookingSms({
-      to: latest.phone,
-      firstName: latest.firstName,
-      campaign: latest.campaign
-    });
+    const sent =
+      isProspectorLead && latest.deployedSiteUrl
+        ? await sendProspectorFollowUpSms({
+            to: latest.phone,
+            firstName: latest.firstName,
+            campaign: latest.campaign,
+            liveLink: latest.deployedSiteUrl
+          })
+        : await sendWinBookingSms({
+            to: latest.phone,
+            firstName: latest.firstName,
+            campaign: latest.campaign
+          });
 
     await patchLead(latest.id, {
       winSmsSentAt: nowIso(),
       winSmsError: undefined,
       smsLastSid: sent.sid,
       smsLastSentAt: nowIso(),
-      smsLastType: "win-followup",
+      smsLastType: isProspectorLead ? "prospector-win-followup" : "win-followup",
       smsLastError: undefined
     });
   } catch (error) {
     await patchLead(latest.id, {
       winSmsError: String(error).slice(0, 500),
-      smsLastType: "win-followup",
+      smsLastType: isProspectorLead ? "prospector-win-followup" : "win-followup",
       smsLastError: String(error).slice(0, 500)
     });
     console.error("[SMS] Win SMS send failed", error);
@@ -1561,12 +1573,15 @@ function buildSchedulingToolPayloads(input: {
     ),
     makeFunction(
       "send_booking_sms",
-      "Send the booking link to the caller by SMS when they prefer texting over booking on-call.",
+      "Send booking SMS follow-up. For prospector flows include the live vision link plus booking link.",
       {
         type: "object",
         properties: {
           phone: { type: "string", description: "Destination phone in E.164 format. If omitted, call customer number is used." },
-          firstName: { type: "string", description: "Prospect first name for personalization." }
+          firstName: { type: "string", description: "Prospect first name for personalization." },
+          liveLink: { type: "string", description: "Optional live vision/deploy URL to include in SMS." },
+          bookingUrl: { type: "string", description: "Optional booking URL override." },
+          leadId: { type: "string", description: "Optional lead id for lookup/context." }
         },
         required: [],
         additionalProperties: false
@@ -1688,9 +1703,13 @@ async function executeSchedulingToolInvocation(
 
     const firstName = safeString(args.firstName) || lead?.firstName || extractFirstNameFromToolPayload(payload);
     const greeting = firstName ? `Hi ${firstName},` : "Hi,";
+    const liveLink = safeString(args.liveLink) || safeString(args.live_link) || lead?.deployedSiteUrl || "";
+    const bookingUrl = safeString(args.bookingUrl) || safeString(args.booking_url) || resolvedBookingUrl();
     const smsBody =
       safeString(args.message) ||
-      `${greeting} I just sent your booking link: ${resolvedBookingUrl()}. A team member may reach out before the meeting.`;
+      (liveLink
+        ? `${greeting} Here is the live vision link: ${liveLink}. If you want to move forward, book here: ${bookingUrl}. A team member may reach out before the meeting.`
+        : `${greeting} I just sent your booking link: ${bookingUrl}. A team member may reach out before the meeting.`);
 
     const sent = await sendSmsMessage({
       to: phone,
@@ -2476,11 +2495,61 @@ export function createServer() {
     }
   });
 
-  app.post("/api/prospector/create-vision-assistant", async (_req: Request, res: Response) => {
+  app.post("/api/prospector/create-vision-assistant", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const attachTools = asBool(body.attachTools, true);
+    const includeGhlSyncTool = asBool(body.includeGhlSyncTool, true);
+    const strictTools = asBool(body.strictTools, true);
+    const serverUrl = asHttpUrl(body.serverUrl) || `${requestBaseUrl(req)}/tools/vapi`;
+    const modeRaw = safeString(body.mode)?.toLowerCase();
+    const mode: "replace" | "append" | "remove" =
+      modeRaw === "replace" || modeRaw === "remove" ? modeRaw : "append";
+
     try {
       const template = createProspectVisionTemplate();
       const created = await createVapiAssistantFromTemplate(template);
-      res.json({ ok: true, assistantId: created.id, assistant: created.raw });
+      const toolErrors: string[] = [];
+      let attachedToolIds: string[] = [];
+
+      if (attachTools) {
+        const toolPayloads = buildSchedulingToolPayloads({
+          serverUrl,
+          strict: strictTools,
+          includeGhlSyncTool
+        });
+
+        const createdToolIds: string[] = [];
+        for (const tool of toolPayloads) {
+          try {
+            const createdTool = await createVapiTool(tool);
+            const id = safeString(createdTool.id);
+            if (id) createdToolIds.push(id);
+          } catch (error) {
+            toolErrors.push(String(error).slice(0, 300));
+          }
+        }
+
+        if (createdToolIds.length > 0) {
+          try {
+            const attach = await setAssistantToolIds(created.id, createdToolIds, { mode });
+            attachedToolIds = attach.toolIds;
+          } catch (error) {
+            toolErrors.push(`attach_failed: ${String(error).slice(0, 300)}`);
+          }
+        }
+      }
+
+      res.json({
+        ok: true,
+        assistantId: created.id,
+        assistant: created.raw,
+        tools: {
+          attachTools,
+          serverUrl: attachTools ? serverUrl : undefined,
+          attachedToolIds,
+          errors: toolErrors
+        }
+      });
     } catch (error) {
       res.status(500).json({ ok: false, error: String(error) });
     }

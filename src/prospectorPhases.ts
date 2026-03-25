@@ -64,7 +64,7 @@ function buildProspectorVoiceScript(lead: Lead): string {
     "Open direct without filler acknowledgements.",
     `Reference market context (${market}) and one concrete finding from leadFindings.`,
     `Tell them we built a custom UX vision and can text the live link: ${siteUrl}.`,
-    "If interested, send booking SMS immediately and mention a team member may reach out before the meeting.",
+    "If interested, send SMS immediately with both the live link and booking link, and mention a team member may reach out before the meeting.",
     "Keep under 3 minutes. Respect opt-out requests and end politely if uninterested.",
     "Do not use the bulk campaign framing."
   ].join(" ");

@@ -15,6 +15,22 @@ export function inferOutcome(payload: Record<string, unknown>): string {
     return "callback_requested";
   }
 
+  if (
+    hasAny([
+      "interested",
+      "send me the link",
+      "text me the link",
+      "send the link",
+      "looks good",
+      "sounds good",
+      "let's do it",
+      "i want to move forward",
+      "yes send it"
+    ])
+  ) {
+    return "callback_requested";
+  }
+
   if (has("no answer")) {
     return "no_answer";
   }

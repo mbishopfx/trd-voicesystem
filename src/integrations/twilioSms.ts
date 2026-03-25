@@ -189,6 +189,39 @@ export async function sendWinBookingSms(input: { to: string; firstName?: string;
   return sendTwilioSms({ to: input.to, body: text });
 }
 
+export async function sendProspectorFollowUpSms(input: {
+  to: string;
+  firstName?: string;
+  campaign?: string;
+  liveLink: string;
+  bookingUrl?: string;
+}): Promise<WinSmsResult> {
+  if (!config.winSmsEnabled) {
+    throw new Error("WIN_SMS_ENABLED is false");
+  }
+  if (!isTwilioSmsConfigured()) {
+    throw new Error("Twilio SMS is not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)");
+  }
+
+  const bookingUrl = input.bookingUrl || resolvedBookingUrl();
+  if (!bookingUrl) {
+    throw new Error("No booking URL configured (BOOKING_URL_* env)");
+  }
+
+  const liveLink = String(input.liveLink || "").trim();
+  if (!liveLink) {
+    throw new Error("liveLink is required for prospector follow-up SMS");
+  }
+
+  const text = applyTemplate(config.prospectorWinSmsTemplate, {
+    firstName: input.firstName || "",
+    bookingUrl,
+    campaignName: input.campaign || config.campaignName,
+    liveLink
+  });
+  return sendTwilioSms({ to: input.to, body: text });
+}
+
 export async function listTwilioMessages(input?: {
   to?: string;
   from?: string;

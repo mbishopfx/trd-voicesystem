@@ -119,6 +119,9 @@ export const config = {
   winSmsTemplate:
     process.env.WIN_SMS_TEMPLATE?.trim() ||
     "Hi {{firstName}}, thanks for speaking with us. Book your free AI Search Optimization strategy session here: {{bookingUrl}}",
+  prospectorWinSmsTemplate:
+    process.env.PROSPECTOR_WIN_SMS_TEMPLATE?.trim() ||
+    "Hi {{firstName}}, here is the live vision link: {{liveLink}}. If you want to move forward, book here: {{bookingUrl}}. A team member may reach out before the meeting.",
   ghlSyncOnCallAttempt: asBool("GHL_SYNC_ON_CALL_ATTEMPT", false),
   prospectorGhlAutoSync: asBool("PROSPECTOR_GHL_AUTO_SYNC", true),
   retargetAutoExport: asBool("RETARGET_AUTO_EXPORT", true)
