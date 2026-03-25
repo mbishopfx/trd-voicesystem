@@ -668,16 +668,7 @@ async function pickFirstReachableAudioUrl(candidates: string[]): Promise<string 
 
 async function chooseAudioUrlFromSet(audio: AudioUrlSet, format?: AudioFormat): Promise<string | undefined> {
   const preferred = format === "mp3" ? audio.mp3 : format === "wav" ? audio.wav : audio.any;
-  let url: string | undefined = format ? preferred[0] : preferred[0] || audio.any[0];
-
-  if (!url && format) {
-    const variants = audio.any.flatMap((candidate) =>
-      deriveAudioFormatCandidates(candidate, format).filter((variant) => variant !== candidate)
-    );
-    url = await pickFirstReachableAudioUrl(variants);
-  }
-
-  return url;
+  return format ? preferred[0] : preferred[0] || audio.any[0];
 }
 
 async function fetchVapiArtifactsByCallId(callId: string): Promise<{
@@ -832,13 +823,6 @@ async function resolveAudioDownloadUrl(
   }
 
   let url: string | undefined = await chooseAudioUrlFromSet(audio, format);
-
-  if (!url && format && workingLead.recordingUrl) {
-    const variants = deriveAudioFormatCandidates(workingLead.recordingUrl, format).filter(
-      (variant) => variant !== workingLead.recordingUrl
-    );
-    url = await pickFirstReachableAudioUrl(variants);
-  }
 
   return {
     lead: workingLead,
