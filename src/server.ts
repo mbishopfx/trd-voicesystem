@@ -51,7 +51,14 @@ import {
 import { TOOL_CATALOG } from "./toolCatalog.js";
 import { loadTemplateState, withTemplateState } from "./templateStore.js";
 import { getDialerCooldownRemainingMs, resetStuckDialingLeads, setDialerPostCallCooldown } from "./worker.js";
-import { canSendWinSms, isTwilioSmsConfigured, sendSmsMessage, sendWinBookingSms } from "./integrations/twilioSms.js";
+import {
+  canSendWinSms,
+  fetchTwilioMessageBySid,
+  isTwilioSmsConfigured,
+  listTwilioMessages,
+  sendSmsMessage,
+  sendWinBookingSms
+} from "./integrations/twilioSms.js";
 import {
   inboundPhasePlan,
   loadInboundProfile,
@@ -654,6 +661,13 @@ function isVoicemailOutcome(outcome?: string): boolean {
   return normalizeOutcome(outcome) === "voicemail";
 }
 
+function extractSmsSidFromNotes(notes?: string): string | undefined {
+  const text = safeString(notes);
+  if (!text) return undefined;
+  const match = text.match(/bookingConfirmationSmsSid=([A-Za-z0-9]+)/);
+  return match?.[1];
+}
+
 async function maybeSendWinSms(lead: Lead, outcome?: string): Promise<void> {
   const latest = await withState((state) => {
     const current = state.leads[lead.id];
@@ -667,7 +681,7 @@ async function maybeSendWinSms(lead: Lead, outcome?: string): Promise<void> {
   if (latest.winSmsSentAt) return;
 
   try {
-    await sendWinBookingSms({
+    const sent = await sendWinBookingSms({
       to: latest.phone,
       firstName: latest.firstName,
       campaign: latest.campaign
@@ -675,11 +689,17 @@ async function maybeSendWinSms(lead: Lead, outcome?: string): Promise<void> {
 
     await patchLead(latest.id, {
       winSmsSentAt: nowIso(),
-      winSmsError: undefined
+      winSmsError: undefined,
+      smsLastSid: sent.sid,
+      smsLastSentAt: nowIso(),
+      smsLastType: "win-followup",
+      smsLastError: undefined
     });
   } catch (error) {
     await patchLead(latest.id, {
-      winSmsError: String(error).slice(0, 500)
+      winSmsError: String(error).slice(0, 500),
+      smsLastType: "win-followup",
+      smsLastError: String(error).slice(0, 500)
     });
     console.error("[SMS] Win SMS send failed", error);
   }
@@ -702,18 +722,24 @@ async function maybeSendVoicemailFollowUpSms(lead: Lead, outcome?: string): Prom
   const body = `${greeting} this is Jarvis with True Rank Digital. I just tried reaching you. Book your AI visibility call here: ${resolvedBookingUrl()}. A team member may reach out before the call.`;
 
   try {
-    await sendSmsMessage({
+    const sent = await sendSmsMessage({
       to: latest.phone,
       body
     });
 
     await patchLead(latest.id, {
       voicemailSmsSentAt: nowIso(),
-      voicemailSmsError: undefined
+      voicemailSmsError: undefined,
+      smsLastSid: sent.sid,
+      smsLastSentAt: nowIso(),
+      smsLastType: "voicemail-followup",
+      smsLastError: undefined
     });
   } catch (error) {
     await patchLead(latest.id, {
-      voicemailSmsError: String(error).slice(0, 500)
+      voicemailSmsError: String(error).slice(0, 500),
+      smsLastType: "voicemail-followup",
+      smsLastError: String(error).slice(0, 500)
     });
     console.error("[SMS] Voicemail follow-up SMS send failed", error);
   }
@@ -1188,7 +1214,11 @@ async function executeSchedulingToolInvocation(
     if (lead) {
       await patchLead(lead.id, {
         winSmsSentAt: nowIso(),
-        winSmsError: undefined
+        winSmsError: undefined,
+        smsLastSid: sent.sid,
+        smsLastSentAt: nowIso(),
+        smsLastType: "tool-send-booking",
+        smsLastError: undefined
       });
     }
 
@@ -1231,7 +1261,11 @@ async function executeSchedulingToolInvocation(
         if (leadFromPayload) {
           await patchLead(leadFromPayload.id, {
             winSmsSentAt: nowIso(),
-            winSmsError: undefined
+            winSmsError: undefined,
+            smsLastSid: sent.sid,
+            smsLastSentAt: nowIso(),
+            smsLastType: "booking-email-missing-fallback",
+            smsLastError: undefined
           });
         }
 
@@ -1282,7 +1316,11 @@ async function executeSchedulingToolInvocation(
         if (leadFromPayload) {
           await patchLead(leadFromPayload.id, {
             winSmsSentAt: nowIso(),
-            winSmsError: undefined
+            winSmsError: undefined,
+            smsLastSid: sent.sid,
+            smsLastSentAt: nowIso(),
+            smsLastType: "booking-create-failed-fallback",
+            smsLastError: undefined
           });
         }
 
@@ -1322,6 +1360,10 @@ async function executeSchedulingToolInvocation(
           await patchLead(updated.id, {
             winSmsSentAt: nowIso(),
             winSmsError: undefined,
+            smsLastSid: sent.sid,
+            smsLastSentAt: nowIso(),
+            smsLastType: "booking-confirmation",
+            smsLastError: undefined,
             notes: `${updated.notes || ""}\nbookingConfirmationSmsSid=${sent.sid || ""}`.trim()
           });
         }
@@ -1545,7 +1587,9 @@ export function createServer() {
       scopeRaw === "webhook" ||
       scopeRaw === "server" ||
       scopeRaw === "ghl" ||
-      scopeRaw === "agent"
+      scopeRaw === "agent" ||
+      scopeRaw === "twilio" ||
+      scopeRaw === "vapi"
         ? scopeRaw
         : undefined;
     const limit = asOptionalInt(req.query.limit, 1, 1000) || 200;
@@ -2666,6 +2710,7 @@ export function createServer() {
           company: lead.company,
           email: lead.email,
           status: lead.status,
+          lastError: lead.lastError,
           attempts: lead.attempts,
           callId: lead.callId,
           callAttemptedAt: lead.callAttemptedAt,
@@ -2675,6 +2720,15 @@ export function createServer() {
           hasTranscript: Boolean(lead.transcript),
           hasAudio: Boolean(lead.recordingUrl),
           recordingUrl: lead.recordingUrl,
+          bookingSource: lead.bookingSource,
+          winSmsSentAt: lead.winSmsSentAt,
+          winSmsError: lead.winSmsError,
+          voicemailSmsSentAt: lead.voicemailSmsSentAt,
+          voicemailSmsError: lead.voicemailSmsError,
+          smsLastSid: lead.smsLastSid || extractSmsSidFromNotes(lead.notes),
+          smsLastSentAt: lead.smsLastSentAt,
+          smsLastType: lead.smsLastType,
+          smsLastError: lead.smsLastError,
           updatedAt: lead.updatedAt
         }));
     });
@@ -2699,6 +2753,7 @@ export function createServer() {
         company: lead.company,
         email: lead.email,
         status: lead.status,
+        lastError: lead.lastError,
         attempts: lead.attempts,
         callId: lead.callId,
         callAttemptedAt: lead.callAttemptedAt,
@@ -2707,6 +2762,15 @@ export function createServer() {
         transcript: lead.transcript,
         transcriptSummary: lead.transcriptSummary,
         recordingUrl: lead.recordingUrl,
+        bookingSource: lead.bookingSource,
+        winSmsSentAt: lead.winSmsSentAt,
+        winSmsError: lead.winSmsError,
+        voicemailSmsSentAt: lead.voicemailSmsSentAt,
+        voicemailSmsError: lead.voicemailSmsError,
+        smsLastSid: lead.smsLastSid || extractSmsSidFromNotes(lead.notes),
+        smsLastSentAt: lead.smsLastSentAt,
+        smsLastType: lead.smsLastType,
+        smsLastError: lead.smsLastError,
         updatedAt: lead.updatedAt
       }
     });
@@ -2749,6 +2813,220 @@ export function createServer() {
     res.redirect(302, url);
   });
 
+  app.get("/api/calls/:leadId/vapi-report", async (req: Request, res: Response) => {
+    const lead = await findLeadByIdOrCallId(req.params.leadId);
+    if (!lead) {
+      res.status(404).json({ ok: false, error: "Lead not found" });
+      return;
+    }
+    if (!lead.callId) {
+      res.status(400).json({ ok: false, error: "Lead does not have a callId yet" });
+      return;
+    }
+
+    const remote = await fetchVapiCallById(lead.callId);
+    if (!remote.ok || !remote.data) {
+      const status = remote.status >= 400 && remote.status < 600 ? remote.status : 502;
+      res.status(status).json({
+        ok: false,
+        error: remote.error || "Failed to fetch Vapi call report",
+        leadId: lead.id,
+        callId: lead.callId
+      });
+      return;
+    }
+
+    const root = remote.data;
+    const callNode = asObject(root.call) || root;
+    const analysis = asObject(callNode.analysis) || asObject(root.analysis) || {};
+    const artifact = asObject(callNode.artifact) || asObject(root.artifact) || {};
+    const artifactMessages = Array.isArray(artifact.messages) ? artifact.messages : [];
+    const firstArtifactMessage = asObject(artifactMessages[0]) || {};
+    const transcript =
+      safeString(artifact.transcript) ||
+      safeString(firstArtifactMessage.transcript) ||
+      safeString(firstArtifactMessage.content);
+
+    res.json({
+      ok: true,
+      leadId: lead.id,
+      callId: lead.callId,
+      report: {
+        status: safeString(callNode.status) || safeString(root.status),
+        startedAt: safeString(callNode.startedAt) || safeString(root.startedAt),
+        endedAt: safeString(callNode.endedAt) || safeString(root.endedAt),
+        endedReason:
+          safeString(callNode.endedReason) ||
+          safeString(analysis.endedReason) ||
+          safeString((asObject(analysis.summary) || {}).endedReason),
+        durationSeconds:
+          Number(callNode.durationSeconds || root.durationSeconds || 0) ||
+          Number((asObject(analysis.costBreakdown) || {}).durationSeconds || 0),
+        transcriptSummary: transcript ? transcript.slice(0, 400) : undefined
+      },
+      raw: root
+    });
+  });
+
+  app.get("/api/calls/:leadId/twilio-sms", async (req: Request, res: Response) => {
+    const lead = await findLeadByIdOrCallId(req.params.leadId);
+    if (!lead) {
+      res.status(404).json({ ok: false, error: "Lead not found" });
+      return;
+    }
+    if (!isTwilioSmsConfigured()) {
+      res.status(400).json({ ok: false, error: "Twilio SMS is not configured" });
+      return;
+    }
+
+    const limit = asOptionalInt(req.query.limit, 1, 100) || 20;
+    const sid = lead.smsLastSid || extractSmsSidFromNotes(lead.notes);
+
+    try {
+      const recent = await listTwilioMessages({ to: lead.phone, pageSize: limit });
+      let sidRecord: Record<string, unknown> | undefined;
+      if (sid) {
+        try {
+          const direct = await fetchTwilioMessageBySid(sid);
+          sidRecord = direct as unknown as Record<string, unknown>;
+        } catch (error) {
+          sidRecord = {
+            sid,
+            lookupError: String(error).slice(0, 300)
+          };
+        }
+      }
+
+      res.json({
+        ok: true,
+        leadId: lead.id,
+        phone: lead.phone,
+        sms: {
+          lastSid: sid,
+          lastSentAt: lead.smsLastSentAt,
+          lastType: lead.smsLastType,
+          lastError: lead.smsLastError || lead.winSmsError || lead.voicemailSmsError,
+          sidRecord,
+          recent
+        }
+      });
+    } catch (error) {
+      res.status(502).json({
+        ok: false,
+        error: String(error).slice(0, 400),
+        leadId: lead.id
+      });
+    }
+  });
+
+  app.get("/api/calls/:leadId/trace", async (req: Request, res: Response) => {
+    const lead = await findLeadByIdOrCallId(req.params.leadId);
+    if (!lead) {
+      res.status(404).json({ ok: false, error: "Lead not found" });
+      return;
+    }
+
+    const includeVapi = asOptionalBool(req.query.includeVapi);
+    const includeTwilio = asOptionalBool(req.query.includeTwilio);
+    const logLimit = asOptionalInt(req.query.logLimit, 10, 500) || 150;
+    const smsSid = lead.smsLastSid || extractSmsSidFromNotes(lead.notes);
+    const shouldIncludeVapi = includeVapi === undefined ? true : includeVapi;
+    const shouldIncludeTwilio = includeTwilio === undefined ? true : includeTwilio;
+
+    let vapiTrace: Record<string, unknown> = {
+      enabled: shouldIncludeVapi,
+      configured: Boolean(config.vapiApiKey),
+      callId: lead.callId
+    };
+    if (shouldIncludeVapi && lead.callId) {
+      const remote = await fetchVapiCallById(lead.callId);
+      vapiTrace = {
+        ...vapiTrace,
+        fetched: remote.ok,
+        statusCode: remote.status,
+        error: remote.ok ? undefined : remote.error,
+        raw: remote.ok ? remote.data : undefined
+      };
+    }
+
+    let twilioTrace: Record<string, unknown> = {
+      enabled: shouldIncludeTwilio,
+      configured: isTwilioSmsConfigured(),
+      lastSid: smsSid
+    };
+    if (shouldIncludeTwilio && isTwilioSmsConfigured()) {
+      try {
+        const recent = await listTwilioMessages({ to: lead.phone, pageSize: 25 });
+        let sidRecord: Record<string, unknown> | undefined;
+        if (smsSid) {
+          try {
+            sidRecord = (await fetchTwilioMessageBySid(smsSid)) as unknown as Record<string, unknown>;
+          } catch (error) {
+            sidRecord = {
+              sid: smsSid,
+              lookupError: String(error).slice(0, 300)
+            };
+          }
+        }
+        twilioTrace = {
+          ...twilioTrace,
+          fetched: true,
+          recent,
+          sidRecord
+        };
+      } catch (error) {
+        twilioTrace = {
+          ...twilioTrace,
+          fetched: false,
+          error: String(error).slice(0, 400)
+        };
+      }
+    }
+
+    const phoneDigits = (lead.phone || "").replace(/\D/g, "");
+    const tokens = [
+      (lead.id || "").toLowerCase(),
+      (lead.callId || "").toLowerCase(),
+      (lead.phone || "").toLowerCase(),
+      phoneDigits,
+      (smsSid || "").toLowerCase()
+    ].filter(Boolean);
+
+    const relatedLogs = listRuntimeLogs({ limit: 1000 })
+      .filter((entry) => {
+        const message = String(entry.message || "").toLowerCase();
+        return tokens.some((token) => message.includes(token));
+      })
+      .slice(-logLimit);
+
+    res.json({
+      ok: true,
+      trace: {
+        lead: {
+          id: lead.id,
+          phone: lead.phone,
+          status: lead.status,
+          attempts: lead.attempts,
+          lastError: lead.lastError,
+          callId: lead.callId,
+          callAttemptedAt: lead.callAttemptedAt,
+          callEndedAt: lead.callEndedAt,
+          outcome: lead.outcome,
+          hasTranscript: Boolean(lead.transcript),
+          transcriptSummary: lead.transcriptSummary || (lead.transcript ? lead.transcript.slice(0, 350) : undefined),
+          recordingUrl: lead.recordingUrl,
+          smsLastSid: smsSid,
+          smsLastSentAt: lead.smsLastSentAt,
+          smsLastType: lead.smsLastType,
+          smsLastError: lead.smsLastError || lead.winSmsError || lead.voicemailSmsError
+        },
+        vapi: vapiTrace,
+        twilio: twilioTrace,
+        relatedLogs
+      }
+    });
+  });
+
   app.get("/api/leads", async (_req: Request, res: Response) => {
     const data = await withState((state) => {
       return Object.values(state.leads)
@@ -2776,6 +3054,10 @@ export function createServer() {
           winSmsError: lead.winSmsError,
           voicemailSmsSentAt: lead.voicemailSmsSentAt,
           voicemailSmsError: lead.voicemailSmsError,
+          smsLastSid: lead.smsLastSid || extractSmsSidFromNotes(lead.notes),
+          smsLastSentAt: lead.smsLastSentAt,
+          smsLastType: lead.smsLastType,
+          smsLastError: lead.smsLastError,
           ghlContactId: lead.ghlContactId,
           updatedAt: lead.updatedAt
         }));

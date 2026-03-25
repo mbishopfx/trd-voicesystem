@@ -1,5 +1,6 @@
 import { config, resolvedBookingUrl } from "./config.js";
 import type { Lead, VapiCallResult } from "./types.js";
+import { runtimeError, runtimeInfo } from "./runtimeLogs.js";
 
 export class HttpError extends Error {
   constructor(message: string, public readonly status: number, public readonly body: string) {
@@ -150,14 +151,34 @@ export async function createOutboundCall(lead: Lead, options?: OutboundCallOptio
   }
 
   const credentials = { baseUrl, apiKey };
+  runtimeInfo("vapi", "Outbound call create requested", {
+    leadId: lead.id,
+    phone: lead.phone,
+    assistantId,
+    hasPhoneNumberId: Boolean(phoneNumberId),
+    hasTransientPhoneNumber: Boolean(transientPhoneNumber)
+  });
 
   try {
-    return await requestCall(payload, credentials);
+    const created = await requestCall(payload, credentials);
+    runtimeInfo("vapi", "Outbound call create success", {
+      leadId: lead.id,
+      callId: created.id
+    });
+    return created;
   } catch (error) {
     if (!(error instanceof HttpError) || error.status !== 400) {
+      runtimeError("vapi", "Outbound call create failed", error, {
+        leadId: lead.id,
+        phone: lead.phone
+      });
       throw error;
     }
 
+    runtimeInfo("vapi", "Retrying outbound call create without maxDurationSeconds", {
+      leadId: lead.id,
+      status: error.status
+    });
     const relaxedOverrides: Record<string, unknown> = { ...assistantOverrides };
     delete relaxedOverrides.maxDurationSeconds;
 
@@ -167,12 +188,25 @@ export async function createOutboundCall(lead: Lead, options?: OutboundCallOptio
     };
 
     try {
-      return await requestCall(fallbackPayload, credentials);
+      const created = await requestCall(fallbackPayload, credentials);
+      runtimeInfo("vapi", "Outbound call create success via relaxed override", {
+        leadId: lead.id,
+        callId: created.id
+      });
+      return created;
     } catch (fallbackError) {
       if (!(fallbackError instanceof HttpError) || fallbackError.status !== 400) {
+        runtimeError("vapi", "Outbound call create failed on relaxed override", fallbackError, {
+          leadId: lead.id,
+          phone: lead.phone
+        });
         throw fallbackError;
       }
 
+      runtimeInfo("vapi", "Retrying outbound call create with minimal override", {
+        leadId: lead.id,
+        status: fallbackError.status
+      });
       const minimalPayload: Record<string, unknown> = {
         ...payload,
         assistantOverrides: {
@@ -180,7 +214,12 @@ export async function createOutboundCall(lead: Lead, options?: OutboundCallOptio
         }
       };
 
-      return requestCall(minimalPayload, credentials);
+      const created = await requestCall(minimalPayload, credentials);
+      runtimeInfo("vapi", "Outbound call create success via minimal override", {
+        leadId: lead.id,
+        callId: created.id
+      });
+      return created;
     }
   }
 }

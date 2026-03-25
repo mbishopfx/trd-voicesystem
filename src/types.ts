@@ -57,6 +57,10 @@ export interface Lead {
   winSmsError?: string;
   voicemailSmsSentAt?: string;
   voicemailSmsError?: string;
+  smsLastSid?: string;
+  smsLastSentAt?: string;
+  smsLastType?: string;
+  smsLastError?: string;
   ghlContactId?: string;
   ghlSyncedAt?: string;
   ghlLastError?: string;
