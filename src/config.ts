@@ -62,7 +62,7 @@ export const config = {
   retryBaseSeconds: Math.max(1, asInt("RETRY_BASE_SECONDS", 30)),
   retryMaxSeconds: Math.max(5, asInt("RETRY_MAX_SECONDS", 900)),
 
-  maxCallSeconds: Math.max(15, asInt("MAX_CALL_SECONDS", 120)),
+  maxCallSeconds: Math.min(180, Math.max(15, asInt("MAX_CALL_SECONDS", 180))),
   postCallDelaySeconds: Math.max(0, asInt("POST_CALL_DELAY_SECONDS", 30)),
   requireOptIn: asBool("REQUIRE_OPT_IN", true),
   trustAllImports: asBool("TRUST_ALL_IMPORTS", true),

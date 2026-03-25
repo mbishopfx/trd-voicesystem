@@ -5,9 +5,10 @@ Production starter for a daily CSV-fed outbound dialer that:
 - Ingests warm leads from `data/incoming/*.csv`
 - Enforces rate limits (effective CPS = min of system, Twilio CPS, Vapi RPS)
 - Places outbound calls through Vapi `/call`
-- Enforces 2-minute call cap and on-topic guardrails
+- Enforces 3-minute call cap and on-topic guardrails
 - Ends immediately on voicemail/answering-machine detection (no voicemail drop)
-- Syncs to GoHighLevel only after a call attempt, tagged with `ai-called`
+- Sends booking-link SMS follow-up on voicemail outcomes (when Twilio + booking URL are configured)
+- Syncs to GoHighLevel only after a call attempt, tagged with `jarvis-voice`
 - Adds call transcript/outcome into GHL notes after call completion
 - Handles booking events from Calendly and Google Calendar webhooks
 - Includes an advanced Template Studio for rule packs, rebuttal libraries, prompt compile, and Vapi draft payload export
@@ -41,6 +42,7 @@ Production starter for a daily CSV-fed outbound dialer that:
 - Receives Vapi end-of-call events.
 - Stores outcome + transcript (except no-contact outcomes).
 - Sends booking-link SMS on win outcomes (`booked`, `callback_requested`) when enabled.
+- Sends booking-link SMS on voicemail outcomes to keep follow-up moving.
 - Writes transcript notes to GHL contact record.
 - Handles Calendly and Google booking webhooks.
 - Auto-refreshes retarget CSV bucket files for retarget-eligible outcomes (`no_answer`, `answered_hung_up`, `voicemail`).
@@ -272,7 +274,7 @@ Use `prompts/outbound-system-prompt.md` in your Vapi assistant system prompt. It
 
 - prompt-injection resistance
 - strict domain limits (no off-topic detours)
-- 2-minute maximum duration
+- 3-minute maximum duration
 - concise rebuttal handling
 - meeting CTA
 
@@ -281,3 +283,4 @@ Use `prompts/outbound-system-prompt.md` in your Vapi assistant system prompt. It
 - Twilio outbound calling often starts at low CPS and returns 429 (`20429`) if exceeded.
 - Defaults are conservative (`TWILIO_CPS=1`).
 - Raise CPS only after Twilio confirms account capacity.
+# trd-voicesystem

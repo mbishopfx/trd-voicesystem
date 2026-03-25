@@ -361,6 +361,7 @@ export async function syncLeadToGhl(input: GhlSyncInput): Promise<GhlSyncResult>
 
   const outcomeTag = normalizeOutcomeTag(input.outcome || input.lead.outcome);
   const tags = compactTags([
+    "jarvis-voice",
     "ai-called",
     outcomeTag ? `ai-outcome:${outcomeTag}` : undefined,
     input.bookingSource ? `booked:${input.bookingSource}` : undefined

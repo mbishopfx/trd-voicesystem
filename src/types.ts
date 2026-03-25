@@ -55,6 +55,8 @@ export interface Lead {
   bookingSource?: string;
   winSmsSentAt?: string;
   winSmsError?: string;
+  voicemailSmsSentAt?: string;
+  voicemailSmsError?: string;
   ghlContactId?: string;
   ghlSyncedAt?: string;
   ghlLastError?: string;

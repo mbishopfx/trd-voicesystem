@@ -51,7 +51,7 @@ import {
 import { TOOL_CATALOG } from "./toolCatalog.js";
 import { loadTemplateState, withTemplateState } from "./templateStore.js";
 import { getDialerCooldownRemainingMs, resetStuckDialingLeads, setDialerPostCallCooldown } from "./worker.js";
-import { canSendWinSms, sendSmsMessage, sendWinBookingSms } from "./integrations/twilioSms.js";
+import { canSendWinSms, isTwilioSmsConfigured, sendSmsMessage, sendWinBookingSms } from "./integrations/twilioSms.js";
 import {
   inboundPhasePlan,
   loadInboundProfile,
@@ -650,6 +650,10 @@ function isWinOutcome(outcome?: string): boolean {
   return normalized === "booked" || normalized === "callback_requested";
 }
 
+function isVoicemailOutcome(outcome?: string): boolean {
+  return normalizeOutcome(outcome) === "voicemail";
+}
+
 async function maybeSendWinSms(lead: Lead, outcome?: string): Promise<void> {
   const latest = await withState((state) => {
     const current = state.leads[lead.id];
@@ -678,6 +682,40 @@ async function maybeSendWinSms(lead: Lead, outcome?: string): Promise<void> {
       winSmsError: String(error).slice(0, 500)
     });
     console.error("[SMS] Win SMS send failed", error);
+  }
+}
+
+async function maybeSendVoicemailFollowUpSms(lead: Lead, outcome?: string): Promise<void> {
+  const latest = await withState((state) => {
+    const current = state.leads[lead.id];
+    return current ? { ...current } : undefined;
+  });
+  if (!latest) return;
+
+  if (!isVoicemailOutcome(outcome || latest.outcome)) return;
+  if (!latest.optIn || latest.dnc) return;
+  if (!isTwilioSmsConfigured()) return;
+  if (!resolvedBookingUrl()) return;
+  if (latest.voicemailSmsSentAt) return;
+
+  const greeting = latest.firstName ? `Hi ${latest.firstName},` : "Hi,";
+  const body = `${greeting} this is Jarvis with True Rank Digital. I just tried reaching you. Book your AI visibility call here: ${resolvedBookingUrl()}. A team member may reach out before the call.`;
+
+  try {
+    await sendSmsMessage({
+      to: latest.phone,
+      body
+    });
+
+    await patchLead(latest.id, {
+      voicemailSmsSentAt: nowIso(),
+      voicemailSmsError: undefined
+    });
+  } catch (error) {
+    await patchLead(latest.id, {
+      voicemailSmsError: String(error).slice(0, 500)
+    });
+    console.error("[SMS] Voicemail follow-up SMS send failed", error);
   }
 }
 
@@ -745,6 +783,7 @@ async function finalizeCall(callId: string, payload: Record<string, unknown>): P
   });
   setDialerPostCallCooldown(config.postCallDelaySeconds * 1000);
   await syncLeadAfterAttempt(lead, { outcome: lead.outcome, transcript: lead.transcript });
+  await maybeSendVoicemailFollowUpSms(lead, outcome);
   await maybeSendWinSms(lead, outcome);
 
   if (config.retargetAutoExport && retargetBucketFromOutcome(lead.outcome)) {
@@ -1135,9 +1174,11 @@ async function executeSchedulingToolInvocation(
       email: safeString(args.email)
     });
 
+    const firstName = safeString(args.firstName) || lead?.firstName || extractFirstNameFromToolPayload(payload);
+    const greeting = firstName ? `Hi ${firstName},` : "Hi,";
     const smsBody =
       safeString(args.message) ||
-      `Hi ${safeString(args.firstName) || lead?.firstName || extractFirstNameFromToolPayload(payload) || ""}, book your free AI Search Optimization session here: ${resolvedBookingUrl()}`.trim();
+      `${greeting} I just sent your booking link: ${resolvedBookingUrl()}. A team member may reach out before the meeting.`;
 
     const sent = await sendSmsMessage({
       to: phone,
@@ -1184,7 +1225,7 @@ async function executeSchedulingToolInvocation(
       if (phoneHint) {
         const sent = await sendSmsMessage({
           to: phoneHint,
-          body: `No problem. Book your free AI Search session here: ${resolvedBookingUrl()}`
+          body: `No problem. Use this booking link: ${resolvedBookingUrl()}. A team member may reach out before the meeting.`
         });
 
         if (leadFromPayload) {
@@ -1236,7 +1277,7 @@ async function executeSchedulingToolInvocation(
       if (phoneHint) {
         const sent = await sendSmsMessage({
           to: phoneHint,
-          body: `We hit a scheduling issue right now. Use this direct booking link: ${resolvedBookingUrl()}`
+          body: `We hit a scheduling issue right now. Use this booking link: ${resolvedBookingUrl()}. A team member may reach out before the meeting.`
         });
         if (leadFromPayload) {
           await patchLead(leadFromPayload.id, {
@@ -2733,6 +2774,8 @@ export function createServer() {
           bookingSource: lead.bookingSource,
           winSmsSentAt: lead.winSmsSentAt,
           winSmsError: lead.winSmsError,
+          voicemailSmsSentAt: lead.voicemailSmsSentAt,
+          voicemailSmsError: lead.voicemailSmsError,
           ghlContactId: lead.ghlContactId,
           updatedAt: lead.updatedAt
         }));
