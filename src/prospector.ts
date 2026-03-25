@@ -1053,7 +1053,7 @@ export async function startProspectorRun(input: ProspectorRunInput): Promise<Pro
       return state;
     });
 
-    run.discovered = leads.filter((lead) => lead.prospectWebsiteStatus === 'missing').length;
+    run.discovered = leads.length;
     run.status = 'completed';
     run.updatedAt = nowIso();
     const sourceCounts = leads.reduce<Record<string, number>>((acc, lead) => {
