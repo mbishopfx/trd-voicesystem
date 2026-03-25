@@ -469,6 +469,100 @@ async function findLeadByIdentity(input: { leadId?: string; phone?: string; emai
   });
 }
 
+async function createFallbackLeadForGhlSync(input: {
+  phone?: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  company?: string;
+  campaign?: string;
+  notes?: string;
+  outcome?: string;
+  transcript?: string;
+  bookingSource?: string;
+  callId?: string;
+}): Promise<Lead | undefined> {
+  const normalizedPhone = normalizePhone(input.phone);
+  if (!normalizedPhone) return undefined;
+
+  const normalizedEmail = safeString(input.email)?.toLowerCase();
+  const fullName = safeString(input.fullName);
+  const nameParts = splitFullName(fullName);
+  const firstName = safeString(input.firstName) || nameParts.firstName;
+  const lastName = safeString(input.lastName) || nameParts.lastName;
+  const company = safeString(input.company);
+  const campaign = safeString(input.campaign) || config.campaignName;
+  const outcome = safeString(input.outcome) || "ghl_sync_imported";
+  const transcript = safeString(input.transcript);
+  const bookingSource = safeString(input.bookingSource) || "ghl-fallback";
+  const callId = safeString(input.callId);
+  const notes = safeString(input.notes);
+
+  const stableId = `ghl-fallback-${hashShort(`${normalizedPhone}|${normalizedEmail || ""}`)}`;
+  const now = nowIso();
+
+  return withState((state) => {
+    const existingById = state.leads[stableId];
+    const existingByIdentity = Object.values(state.leads).find((lead) => {
+      const phoneMatch = normalizePhone(lead.phone) === normalizedPhone;
+      const emailMatch =
+        Boolean(normalizedEmail) && Boolean(lead.email) && lead.email!.trim().toLowerCase() === normalizedEmail;
+      return phoneMatch || emailMatch;
+    });
+
+    const existing = existingById || existingByIdentity;
+    if (existing) {
+      existing.firstName = firstName || existing.firstName;
+      existing.lastName = lastName || existing.lastName;
+      existing.company = company || existing.company;
+      existing.email = normalizedEmail || existing.email;
+      existing.campaign = campaign || existing.campaign;
+      existing.notes = notes || existing.notes;
+      existing.outcome = existing.outcome || outcome;
+      existing.transcript = existing.transcript || transcript;
+      existing.bookingSource = existing.bookingSource || bookingSource;
+      existing.callId = existing.callId || callId;
+      existing.callAttemptedAt = existing.callAttemptedAt || now;
+      existing.lastAttemptAt = existing.lastAttemptAt || now;
+      existing.attempts = Math.max(1, existing.attempts || 0);
+      existing.updatedAt = now;
+      return { ...existing };
+    }
+
+    const fallback: Lead = {
+      id: stableId,
+      phone: normalizedPhone,
+      firstName,
+      lastName,
+      company,
+      email: normalizedEmail,
+      timezone: config.defaultTimezone,
+      campaign,
+      sourceFile: "ghl-sync-fallback",
+      sourceRow: 0,
+      findings: "Auto-created for GHL sync fallback",
+      notes: notes || "Created because sync_ghl_contact was called without a matching local lead.",
+      optIn: true,
+      dnc: false,
+      status: "completed",
+      attempts: 1,
+      nextAttemptAt: undefined,
+      lastAttemptAt: now,
+      callId,
+      callAttemptedAt: now,
+      outcome,
+      transcript,
+      bookingSource,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    state.leads[fallback.id] = fallback;
+    return { ...fallback };
+  });
+}
+
 async function findLeadById(leadId: string): Promise<Lead | undefined> {
   const id = safeString(leadId);
   if (!id) return undefined;
@@ -1387,30 +1481,60 @@ async function executeSchedulingToolInvocation(
   }
 
   if (normalized === "sync_ghl_contact" || normalized === "sync_contact_to_ghl") {
-    const lead = await findLeadByIdentity({
+    const foundLead = await findLeadByIdentity({
       leadId: safeString(args.leadId),
-      phone: safeString(args.phone),
+      phone: safeString(args.phone) || extractPhoneFromToolPayload(payload),
       email: safeString(args.email)
     });
+
+    let lead = foundLead;
+    let fallbackLeadCreated = false;
+
+    if (!lead) {
+      lead = await createFallbackLeadForGhlSync({
+        phone: safeString(args.phone) || extractPhoneFromToolPayload(payload),
+        email: safeString(args.email),
+        firstName: safeString(args.firstName) || extractFirstNameFromToolPayload(payload),
+        lastName: safeString(args.lastName),
+        fullName: safeString(args.name) || safeString(args.fullName),
+        company: safeString(args.company),
+        campaign: safeString(args.campaign),
+        notes: safeString(args.notes),
+        outcome: safeString(args.outcome),
+        transcript: safeString(args.transcript),
+        bookingSource: safeString(args.bookingSource) || "ghl-fallback",
+        callId: safeString(args.callId) || getCallId(payload)
+      });
+      fallbackLeadCreated = Boolean(lead);
+    }
 
     if (!lead) {
       return {
         ok: false,
-        error: "Lead not found for GHL sync"
+        error: "Lead not found for GHL sync, and fallback creation requires a valid phone number."
       };
     }
 
     await syncLeadAfterAttempt(lead, {
-      outcome: safeString(args.outcome) || lead.outcome,
+      outcome: safeString(args.outcome) || lead.outcome || "ghl_sync_imported",
       transcript: safeString(args.transcript) || lead.transcript,
       bookingSource: safeString(args.bookingSource) || lead.bookingSource,
       force: asBool(args.force, true)
     });
 
     const latest = await findLeadById(lead.id);
+    if (fallbackLeadCreated) {
+      runtimeInfo("ghl", "Fallback lead created for sync_ghl_contact", {
+        leadId: lead.id,
+        phone: lead.phone,
+        ghlContactId: latest?.ghlContactId || ""
+      });
+    }
+
     return {
       ok: true,
       leadId: lead.id,
+      fallbackLeadCreated,
       ghlContactId: latest?.ghlContactId,
       ghlSyncedAt: latest?.ghlSyncedAt,
       ghlLastError: latest?.ghlLastError
