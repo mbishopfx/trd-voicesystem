@@ -222,6 +222,8 @@ async function buildLead(input: ProspectorRunInput, place: PlaceCandidate, idx: 
     prospectCity: input.city,
     prospectState: input.state,
     prospectSummary: summary,
+    prospectorPhase: 1,
+    prospectorPhaseStatus: 'phase1_collected',
     generationStatus: websiteStatus === 'missing' ? 'ready' : 'not_started',
     optIn: false,
     dnc: false,
@@ -259,7 +261,7 @@ export async function startProspectorRun(input: ProspectorRunInput): Promise<Pro
       return state;
     });
 
-    run.discovered = leads.filter((lead) => lead.status === 'queued').length;
+    run.discovered = leads.filter((lead) => lead.prospectWebsiteStatus === 'missing').length;
     run.status = 'completed';
     run.updatedAt = nowIso();
     run.notes = `Fetched ${places.length} places across fallback Google queries; queued ${run.discovered} missing-website candidates.`;

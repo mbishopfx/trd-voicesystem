@@ -20,6 +20,14 @@ import { getProspectLeadById } from "./prospectTest.js";
 import { createProspectVisionTemplate } from "./prospectTemplate.js";
 import { createTonyDemoTemplate } from "./tonyDemoTemplate.js";
 import { deployGeneratedProspects } from "./deploy.js";
+import {
+  runProspectorPhase2,
+  runProspectorPhase3,
+  runProspectorPhase4,
+  runProspectorPhase5,
+  runProspectorPipeline
+} from "./prospectorPhases.js";
+import { canWriteProspectorRecords, listProspectorPhaseRecords } from "./prospectorRecords.js";
 import { computeAnalyticsSummary } from "./analytics.js";
 import {
   exportRetargetBuckets,
@@ -2277,6 +2285,17 @@ export function createServer() {
     res.json({ ok: true, runs: listProspectorRuns() });
   });
 
+  app.get("/api/prospector/records", async (req: Request, res: Response) => {
+    const limit = asOptionalInt(req.query.limit, 1, 1000) || 200;
+    const records = await listProspectorPhaseRecords(limit);
+    res.json({
+      ok: true,
+      writable: canWriteProspectorRecords(),
+      count: records.length,
+      records
+    });
+  });
+
   app.get("/api/prospector/leads", async (req: Request, res: Response) => {
     const websiteStatus = safeString(req.query.websiteStatus)?.toLowerCase();
     const limit = asOptionalInt(req.query.limit, 1, 500) || 200;
@@ -2296,10 +2315,20 @@ export function createServer() {
           prospectState: lead.prospectState,
           prospectAddress: lead.prospectAddress,
           prospectWebsiteUri: lead.prospectWebsiteUri,
+          prospectorPhase: lead.prospectorPhase,
+          prospectorPhaseStatus: lead.prospectorPhaseStatus,
+          prospectorTemplateSource: lead.prospectorTemplateSource,
+          prospectorTemplateModel: lead.prospectorTemplateModel,
+          prospectorPromptVersion: lead.prospectorPromptVersion,
           generationStatus: lead.generationStatus,
+          prospectDeployName: lead.prospectDeployName,
           generatedSitePath: lead.generatedSitePath,
           generatedScreenshotPath: lead.generatedScreenshotPath,
           deployedSiteUrl: lead.deployedSiteUrl,
+          prospectorGhlContactId: lead.prospectorGhlContactId || lead.ghlContactId,
+          prospectorGhlSyncedAt: lead.prospectorGhlSyncedAt,
+          hasProspectorVoiceScript: Boolean(lead.prospectorVoiceScript),
+          hasProspectorVoiceVariables: Boolean(lead.prospectorVoiceVariables),
           bookingUrl: 'https://cal.com/trd-voice/intro',
           handoffStatus: lead.handoffStatus,
           updatedAt: lead.updatedAt
@@ -2356,7 +2385,79 @@ export function createServer() {
     const body = (req.body || {}) as Record<string, unknown>;
     const limit = asOptionalInt(body.limit, 1, 100) || 10;
     const result = await deployGeneratedProspects(limit);
-    res.json({ ok: true, result });
+    const phase3 = await runProspectorPhase3(limit);
+    res.json({ ok: true, result, phase3 });
+  });
+
+  app.post("/api/prospector/phase1", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const icp = safeString(body.icp);
+    const city = safeString(body.city);
+    const stateValue = safeString(body.state);
+    if (!icp || !city || !stateValue) {
+      res.status(400).json({ ok: false, error: "phase1 requires icp, city, and state" });
+      return;
+    }
+    const run = await startProspectorRun({ icp, city, state: stateValue });
+    res.json({ ok: true, phase: 1, run });
+  });
+
+  app.post("/api/prospector/phase2", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const limit = asOptionalInt(body.limit, 1, 100) || 10;
+    const result = await runProspectorPhase2(limit);
+    res.json({ ok: true, phase: 2, result });
+  });
+
+  app.post("/api/prospector/phase3", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const limit = asOptionalInt(body.limit, 1, 500) || 100;
+    const result = await runProspectorPhase3(limit);
+    res.json({ ok: true, phase: 3, result });
+  });
+
+  app.post("/api/prospector/phase4", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const limit = asOptionalInt(body.limit, 1, 500) || 100;
+    const result = await runProspectorPhase4(limit);
+    res.json({ ok: true, phase: 4, result });
+  });
+
+  app.post("/api/prospector/phase5", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    try {
+      const result = await runProspectorPhase5({
+        limit: asOptionalInt(body.limit, 1, 100) || 10,
+        leadId: safeString(body.leadId),
+        dryRun: asBool(body.dryRun, false),
+        assistantId: safeString(body.assistantId)
+      });
+      res.json({ ok: true, phase: 5, result });
+    } catch (error) {
+      res.status(400).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.post("/api/prospector/pipeline", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    try {
+      const result = await runProspectorPipeline({
+        icp: safeString(body.icp),
+        city: safeString(body.city),
+        state: safeString(body.state),
+        limit: asOptionalInt(body.limit, 1, 100) || 10,
+        runPhase1: asBool(body.runPhase1, false),
+        runPhase2: body.runPhase2 === undefined ? true : asBool(body.runPhase2, true),
+        runPhase3: body.runPhase3 === undefined ? true : asBool(body.runPhase3, true),
+        runPhase4: body.runPhase4 === undefined ? true : asBool(body.runPhase4, true),
+        runPhase5: asBool(body.runPhase5, false),
+        dryRunCalls: asBool(body.dryRunCalls, false),
+        assistantId: safeString(body.assistantId)
+      });
+      res.json({ ok: true, result });
+    } catch (error) {
+      res.status(400).json({ ok: false, error: String(error) });
+    }
   });
 
   app.post("/api/prospector/create-vision-assistant", async (_req: Request, res: Response) => {

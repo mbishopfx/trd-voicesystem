@@ -424,7 +424,7 @@
                 <p class="text-sm text-outline">Enter an ICP and market. This tab kicks off the prospecting engine and logs discovered candidates into the system.</p>
               </div>
               <div class="rounded-lg border border-secondary-fixed/30 bg-secondary-fixed/20 px-3 py-2 text-xs text-on-secondary-fixed-variant">
-                Best for city-by-city grinding. Supabase can be added later without changing the UX.
+                5-phase pipeline: gather, build/deploy, link/sync, script, specialized call.
               </div>
             </div>
 
@@ -440,19 +440,37 @@
               </label>
             </div>
 
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Batch Limit
+                <input id="prospectorLimit" type="number" min="1" max="100" value="10" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Prospector Assistant Override (optional)
+                <input id="prospectorAssistantId" type="text" placeholder="assistant_xxx" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="flex items-end gap-2 text-xs font-bold uppercase tracking-wider text-outline">
+                <input id="prospectorDryRunCalls" type="checkbox" class="h-4 w-4 rounded border border-outline-variant/40" />
+                Dry Run Phase 5 Calls
+              </label>
+            </div>
+
             <div class="mt-4 flex flex-wrap gap-3">
-              <button id="prospectorStartBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Start Grinding</button>
-              <button id="prospectorGenerateBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Generate Sites</button>
+              <button id="prospectorStartBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Phase 1 Gather</button>
+              <button id="prospectorGenerateBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Phase 2 Build + Deploy</button>
+              <button id="prospectorPhase3Btn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Phase 3 Link + Sync</button>
+              <button id="prospectorPhase4Btn" class="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-indigo-700">Phase 4 Script</button>
+              <button id="prospectorPhase5Btn" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-700">Phase 5 Specialized Call</button>
+              <button id="prospectorPipelineBtn" class="rounded-xl border border-slate-400 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-700">Run Full Pipeline</button>
               <button id="prospectorScreenshotBtn" class="rounded-xl border border-tertiary/35 bg-tertiary/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-tertiary">Generate Screenshots</button>
               <button id="prospectorReadyBtn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Mark Ready For Call</button>
               <button id="prospectorQueueBtn" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-700">Release To Queue</button>
               <button id="prospectorRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh Runs</button>
             </div>
 
-            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-4">
               <div class="rounded-xl border border-outline-variant/30 bg-white p-4 text-sm"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">Fetched Prospects</div><div id="prospectorFetchedCount" class="mt-2 font-headline text-2xl font-extrabold">0</div></div>
               <div class="rounded-xl border border-outline-variant/30 bg-white p-4 text-sm"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">Missing Website</div><div id="prospectorMissingCount" class="mt-2 font-headline text-2xl font-extrabold">0</div></div>
-              <div class="rounded-xl border border-outline-variant/30 bg-white p-4 text-sm"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">Website Present</div><div id="prospectorPresentCount" class="mt-2 font-headline text-2xl font-extrabold">0</div></div>
+              <div class="rounded-xl border border-outline-variant/30 bg-white p-4 text-sm"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">Deployed Pages</div><div id="prospectorDeployedCount" class="mt-2 font-headline text-2xl font-extrabold">0</div></div>
+              <div class="rounded-xl border border-outline-variant/30 bg-white p-4 text-sm"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">GHL Synced</div><div id="prospectorGhlCount" class="mt-2 font-headline text-2xl font-extrabold">0</div></div>
             </div>
 
             <div id="prospectorResult" class="mt-4 rounded-xl border border-outline-variant/30 bg-white p-4 text-sm text-on-surface">No prospector run started yet.</div>
@@ -481,6 +499,27 @@
 
           <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
             <div class="mb-4 flex items-center justify-between">
+              <h3 class="font-headline text-lg font-extrabold text-on-surface">Prospector Phase Records</h3>
+              <span id="prospectorRecordsMeta" class="text-xs text-outline">DB logging status unknown</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-surface-container-low/40">
+                  <tr>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Phase</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Company</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Message</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Created</th>
+                  </tr>
+                </thead>
+                <tbody id="prospectorRecordsRows" class="divide-y divide-outline-variant/10"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="mb-4 flex items-center justify-between">
               <h3 class="font-headline text-lg font-extrabold text-on-surface">Prospector Lead Feed</h3>
               <span class="text-xs text-outline">Latest prospects</span>
             </div>
@@ -490,8 +529,8 @@
                   <tr>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Business</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Website</th>
-                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Generation</th>
-                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Handoff</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Generation + Phase</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Deploy + GHL</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Phone</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Updated</th>
                   </tr>
@@ -607,6 +646,7 @@
         logs: [],
         leads: [],
         prospectorRuns: [],
+        prospectorRecords: [],
         routeHealth: {
           healthy: false,
           checks: [],
@@ -634,6 +674,21 @@
           throw new Error(data.error || `Request failed (${res.status})`);
         }
         return data;
+      }
+
+      function prospectorLimitValue() {
+        const raw = document.getElementById("prospectorLimit")?.value;
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed)) return 10;
+        return Math.min(100, Math.max(1, Math.trunc(parsed)));
+      }
+
+      function prospectorAssistantIdValue() {
+        return document.getElementById("prospectorAssistantId")?.value?.trim() || "";
+      }
+
+      function prospectorDryRunEnabled() {
+        return Boolean(document.getElementById("prospectorDryRunCalls")?.checked);
       }
 
       function artifactLookupValue() {
@@ -1034,25 +1089,69 @@
         }
         root.innerHTML = leads.map((lead) => {
           const updatedAt = lead.updatedAt ? new Date(lead.updatedAt).toLocaleString() : '--';
+          const website = lead.prospectWebsiteUri
+            ? `<a class="text-teal-700 underline" target="_blank" rel="noreferrer" href="${escapeHtml(lead.prospectWebsiteUri)}">${escapeHtml(lead.prospectWebsiteStatus || "present")}</a>`
+            : escapeHtml(lead.prospectWebsiteStatus || '--');
+          const deploy = lead.deployedSiteUrl
+            ? `<a class="text-teal-700 underline" target="_blank" rel="noreferrer" href="${escapeHtml(lead.deployedSiteUrl)}">Open Deploy</a>`
+            : "No deploy";
           return `<tr>
             <td class="px-4 py-3">${escapeHtml(lead.company || lead.id || '--')}</td>
-            <td class="px-4 py-3">${escapeHtml(lead.prospectWebsiteStatus || '--')}</td>
-            <td class="px-4 py-3">${escapeHtml(lead.generationStatus || '--')}</td>
-            <td class="px-4 py-3">${escapeHtml(lead.handoffStatus || '--')}</td>
+            <td class="px-4 py-3">${website}</td>
+            <td class="px-4 py-3">${escapeHtml(lead.generationStatus || '--')}<div class="text-xs text-outline">${escapeHtml(lead.prospectorPhaseStatus || '--')}</div></td>
+            <td class="px-4 py-3">${deploy}<div class="text-xs text-outline">${escapeHtml(lead.prospectorGhlContactId || lead.handoffStatus || '--')}</div></td>
             <td class="px-4 py-3">${escapeHtml(lead.phone || '--')}</td>
             <td class="px-4 py-3 text-xs">${escapeHtml(updatedAt)}</td>
           </tr>`;
         }).join('');
       }
 
+      function renderProspectorRecords(records, writable) {
+        const root = document.getElementById("prospectorRecordsRows");
+        const meta = document.getElementById("prospectorRecordsMeta");
+        if (meta) {
+          meta.textContent = writable ? "DB logging active" : "DB logging disabled (set DATABASE_URL/Supabase)";
+        }
+        if (!root) return;
+        if (!records.length) {
+          root.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-sm text-outline">No phase records yet.</td></tr>`;
+          return;
+        }
+        root.innerHTML = records.slice(0, 80).map((record) => {
+          const createdAt = record.createdAt ? new Date(record.createdAt).toLocaleString() : "--";
+          return `<tr>
+            <td class="px-4 py-3">P${escapeHtml(String(record.phase || "--"))}</td>
+            <td class="px-4 py-3">${escapeHtml(record.company || record.leadId || "--")}</td>
+            <td class="px-4 py-3">${escapeHtml(record.status || "--")}</td>
+            <td class="px-4 py-3">${escapeHtml(record.message || "--")}</td>
+            <td class="px-4 py-3 text-xs">${escapeHtml(createdAt)}</td>
+          </tr>`;
+        }).join("");
+      }
+
+      function updateProspectorCounts(leads) {
+        const fetched = leads.length;
+        const missing = leads.filter((lead) => lead.prospectWebsiteStatus === "missing").length;
+        const deployed = leads.filter((lead) => Boolean(lead.deployedSiteUrl)).length;
+        const ghlSynced = leads.filter((lead) => Boolean(lead.prospectorGhlContactId)).length;
+        setText("prospectorFetchedCount", String(fetched));
+        setText("prospectorMissingCount", String(missing));
+        setText("prospectorDeployedCount", String(deployed));
+        setText("prospectorGhlCount", String(ghlSynced));
+      }
+
       async function refreshProspectorRuns() {
-        const [runsResp, leadsResp] = await Promise.all([
+        const [runsResp, leadsResp, recordsResp] = await Promise.all([
           getJson("/api/prospector/runs"),
-          getJson("/api/prospector/leads?limit=100")
+          getJson("/api/prospector/leads?limit=200"),
+          getJson("/api/prospector/records?limit=200")
         ]);
         state.prospectorRuns = runsResp.runs || [];
+        state.prospectorRecords = recordsResp.records || [];
         renderProspectorRuns(state.prospectorRuns);
         renderProspectorLeads(leadsResp.leads || []);
+        renderProspectorRecords(state.prospectorRecords, Boolean(recordsResp.writable));
+        updateProspectorCounts(leadsResp.leads || []);
       }
 
       async function startProspector() {
@@ -1062,23 +1161,23 @@
         if (!icp || !city || !stateValue) {
           throw new Error("Enter ICP, city, and state first.");
         }
-        const before = state.leads.length;
-        const data = await postJson("/api/prospector/start", { icp, city, state: stateValue });
+        const data = await postJson("/api/prospector/phase1", { icp, city, state: stateValue });
         const run = data.run || {};
         await refreshProspectorRuns();
         await refreshLeads();
         await refreshStatus();
-        const prospectLeads = state.leads.filter((lead) => lead.sourceFile === 'prospector-dashboard' && lead.prospectIcp === icp && lead.prospectCity === city && lead.prospectState === stateValue);
-        const missing = prospectLeads.filter((lead) => lead.prospectWebsiteStatus === 'missing').length;
-        const present = prospectLeads.filter((lead) => lead.prospectWebsiteStatus === 'present').length;
-        setText('prospectorFetchedCount', String(prospectLeads.length));
-        setText('prospectorMissingCount', String(missing));
-        setText('prospectorPresentCount', String(present));
+        const prospectLeads = state.leads.filter((lead) =>
+          lead.sourceFile === "prospector-dashboard" &&
+          lead.prospectIcp === icp &&
+          lead.prospectCity === city &&
+          lead.prospectState === stateValue
+        );
+        const missing = prospectLeads.filter((lead) => lead.prospectWebsiteStatus === "missing").length;
         const result = document.getElementById("prospectorResult");
         if (result) {
-          result.innerHTML = `<div class="space-y-1"><p><strong>Run started:</strong> ${escapeHtml(run.id || "n/a")}</p><p><strong>Market:</strong> ${escapeHtml(icp)} in ${escapeHtml(city)}, ${escapeHtml(stateValue)}</p><p><strong>Fetched:</strong> ${escapeHtml(String(prospectLeads.length))} total prospects</p><p><strong>Missing website:</strong> ${escapeHtml(String(missing))} | <strong>Website present:</strong> ${escapeHtml(String(present))}</p><p class="text-xs text-outline">Lead delta in app state: ${escapeHtml(String(state.leads.length - before))}. Next phase is enrichment + generation for only the missing-website subset.</p></div>`;
+          result.innerHTML = `<div class="space-y-1"><p><strong>Phase 1 run:</strong> ${escapeHtml(run.id || "n/a")}</p><p><strong>Market:</strong> ${escapeHtml(icp)} in ${escapeHtml(city)}, ${escapeHtml(stateValue)}</p><p><strong>Collected:</strong> ${escapeHtml(String(prospectLeads.length))} prospects | <strong>Missing website:</strong> ${escapeHtml(String(missing))}</p><p class="text-xs text-outline">Use Phase 2 to generate and deploy premium pages via Gemini.</p></div>`;
         }
-        showToast(`Prospector started for ${icp} in ${city}, ${stateValue}`);
+        showToast(`Phase 1 complete for ${icp} in ${city}, ${stateValue}`);
       }
 
       async function refreshAnalytics() {
@@ -1354,10 +1453,76 @@
 
         document.getElementById("prospectorGenerateBtn").addEventListener("click", async () => {
           try {
-            const data = await postJson("/api/prospector/generate-sites", { limit: 10 });
+            const data = await postJson("/api/prospector/phase2", { limit: prospectorLimitValue() });
             await refreshProspectorRuns();
             await refreshLeads();
-            showToast(`Generated ${data.result?.generated || 0} prospect site(s).`);
+            showToast(`Phase 2 complete. generated=${data.result?.generated || 0}, deployed=${data.result?.deployed || 0}`);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorPhase3Btn").addEventListener("click", async () => {
+          try {
+            const data = await postJson("/api/prospector/phase3", { limit: prospectorLimitValue() });
+            await refreshProspectorRuns();
+            await refreshLeads();
+            showToast(`Phase 3 complete. organized=${data.result?.organized || 0}, ghlSynced=${data.result?.ghlSynced || 0}`);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorPhase4Btn").addEventListener("click", async () => {
+          try {
+            const data = await postJson("/api/prospector/phase4", { limit: prospectorLimitValue() });
+            await refreshProspectorRuns();
+            await refreshLeads();
+            showToast(`Phase 4 complete. scripted=${data.result?.scripted || 0}`);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorPhase5Btn").addEventListener("click", async () => {
+          try {
+            const data = await postJson("/api/prospector/phase5", {
+              limit: prospectorLimitValue(),
+              assistantId: prospectorAssistantIdValue() || undefined,
+              dryRun: prospectorDryRunEnabled()
+            });
+            await refreshProspectorRuns();
+            await refreshLeads();
+            showToast(`Phase 5 complete. queued=${data.result?.queued || 0}, failed=${data.result?.failed || 0}`);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorPipelineBtn").addEventListener("click", async () => {
+          try {
+            const icp = document.getElementById("prospectorIcp")?.value?.trim() || "";
+            const city = document.getElementById("prospectorCity")?.value?.trim() || "";
+            const stateValue = document.getElementById("prospectorState")?.value?.trim() || "";
+            const runPhase1 = Boolean(icp && city && stateValue);
+            const data = await postJson("/api/prospector/pipeline", {
+              icp: runPhase1 ? icp : undefined,
+              city: runPhase1 ? city : undefined,
+              state: runPhase1 ? stateValue : undefined,
+              limit: prospectorLimitValue(),
+              runPhase1,
+              runPhase2: true,
+              runPhase3: true,
+              runPhase4: true,
+              runPhase5: true,
+              dryRunCalls: prospectorDryRunEnabled(),
+              assistantId: prospectorAssistantIdValue() || undefined
+            });
+            await refreshProspectorRuns();
+            await refreshLeads();
+            const p2 = data.result?.phase2 || {};
+            const p5 = data.result?.phase5 || {};
+            showToast(`Pipeline complete. p2 deployed=${p2.deployed || 0}, p5 queued=${p5.queued || 0}`);
           } catch (error) {
             showToast(String(error), true);
           }
@@ -1365,7 +1530,7 @@
 
         document.getElementById("prospectorScreenshotBtn").addEventListener("click", async () => {
           try {
-            const data = await postJson("/api/prospector/generate-screenshots", { limit: 10 });
+            const data = await postJson("/api/prospector/generate-screenshots", { limit: prospectorLimitValue() });
             await refreshProspectorRuns();
             await refreshLeads();
             showToast(`Generated ${data.result?.generated || 0} prospect screenshot(s).`);

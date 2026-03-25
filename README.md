@@ -102,6 +102,9 @@ Twilio fallback (if Vapi phone number UUID is unavailable):
 - `WIN_SMS_ENABLED=true` (recommended)
 - `WIN_SMS_TEMPLATE=...` (supports `{{firstName}}`, `{{bookingUrl}}`, `{{campaignName}}`)
 - `TRUST_ALL_IMPORTS=true` (recommended when uploaded/imported lists are already approved to call)
+- `VAPI_PROSPECTOR_ASSISTANT_ID` (required for Prospector phase 5 specialized calling)
+- `GEMINI_PROSPECTOR_MODEL=gemini-3.0-flash` (recommended for Prospector landing page generation)
+- `PROSPECTOR_GHL_AUTO_SYNC=true` (auto-create/sync Prospector contacts + notes/tags)
 
 ## Recommended env for persistent cloud state
 
@@ -182,6 +185,18 @@ Sample smoke CSV (provided in repo):
 - `GET /api/calls/:leadId`
 - `GET /api/calls/:leadId/transcript.txt` (download transcript)
 - `GET /api/calls/:leadId/audio` (redirect to recording URL when available)
+
+## Prospector endpoints (5-phase flow)
+
+- `POST /api/prospector/phase1` (gather leads by ICP + market)
+- `POST /api/prospector/phase2` (generate + deploy pages)
+- `POST /api/prospector/phase3` (organize links + optional GHL sync/tag `jarvis-prospector`)
+- `POST /api/prospector/phase4` (build specialized voice script + variables)
+- `POST /api/prospector/phase5` (queue specialized Prospector calls with `VAPI_PROSPECTOR_ASSISTANT_ID`)
+- `POST /api/prospector/pipeline` (run phases together)
+- `GET /api/prospector/leads`
+- `GET /api/prospector/runs`
+- `GET /api/prospector/records` (DB-backed phase records/logs when `DATABASE_URL` is configured)
 
 ## Vapi tools endpoints
 

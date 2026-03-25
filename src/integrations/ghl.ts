@@ -46,6 +46,13 @@ export interface GhlSyncResult {
   error?: string;
 }
 
+export interface ProspectorGhlSyncInput {
+  lead: Lead;
+  deployedSiteUrl?: string;
+  generatedSitePath?: string;
+  force?: boolean;
+}
+
 function creds(): GhlCredentials | undefined {
   if (!config.ghlApiKey || !config.ghlLocationId) return undefined;
   return {
@@ -264,15 +271,17 @@ function extractContactId(data: Record<string, unknown>): string | undefined {
 }
 
 async function upsertContact(c: GhlCredentials, lead: Lead, tags: string[]): Promise<string> {
-  const name = [lead.firstName, lead.lastName].filter(Boolean).join(" ").trim();
+  const name = [lead.firstName, lead.lastName].filter(Boolean).join(" ").trim() || asString(lead.company) || "";
+  const phone = asString(lead.phone);
+  const email = asString(lead.email);
 
   const payload: Record<string, unknown> = {
     locationId: c.locationId,
     firstName: lead.firstName,
     lastName: lead.lastName,
     name: name || undefined,
-    phone: lead.phone,
-    email: lead.email,
+    phone: phone || undefined,
+    email: email || undefined,
     companyName: lead.company,
     tags
   };
@@ -289,12 +298,15 @@ async function upsertContact(c: GhlCredentials, lead: Lead, tags: string[]): Pro
     return contactId;
   }
 
-  const query = new URLSearchParams({ locationId: c.locationId, number: lead.phone });
-  if (lead.email) query.set("email", lead.email);
-  const duplicateRes = await ghlRequest(c, "GET", `/contacts/search/duplicate?${query.toString()}`);
-  contactId = extractContactId(duplicateRes.data);
-  if (duplicateRes.status >= 200 && duplicateRes.status < 300 && contactId) {
-    return contactId;
+  if (phone || email) {
+    const query = new URLSearchParams({ locationId: c.locationId });
+    if (phone) query.set("number", phone);
+    if (email) query.set("email", email);
+    const duplicateRes = await ghlRequest(c, "GET", `/contacts/search/duplicate?${query.toString()}`);
+    contactId = extractContactId(duplicateRes.data);
+    if (duplicateRes.status >= 200 && duplicateRes.status < 300 && contactId) {
+      return contactId;
+    }
   }
 
   throw new Error(`Unable to upsert contact in GHL. status=${upsertRes.status}/${createRes.status}`);
@@ -386,6 +398,51 @@ export async function syncLeadToGhl(input: GhlSyncInput): Promise<GhlSyncResult>
     runtimeError("ghl", "lead sync failed", error, {
       leadId: input.lead.id,
       outcome: input.outcome || input.lead.outcome || ""
+    });
+    return { synced: false, error: String(error) };
+  }
+}
+
+export async function syncProspectorContactToGhl(input: ProspectorGhlSyncInput): Promise<GhlSyncResult> {
+  const c = creds();
+  if (!c) {
+    return { synced: false, error: "GHL not configured" };
+  }
+
+  const tags = compactTags([
+    "jarvis-prospector",
+    "ai-prospector",
+    input.lead.prospectIcp ? `prospector-icp:${input.lead.prospectIcp.toLowerCase().replace(/\s+/g, "_")}` : undefined,
+    input.deployedSiteUrl ? "prospector-site-deployed" : "prospector-site-generated"
+  ]);
+
+  const note = [
+    `Prospector Lead: ${input.lead.company || input.lead.id}`,
+    `Market: ${input.lead.prospectCity || ""}, ${input.lead.prospectState || ""}`,
+    `ICP: ${input.lead.prospectIcp || ""}`,
+    `Deploy Link: ${input.deployedSiteUrl || "(not deployed yet)"}`,
+    `Generated File: ${input.generatedSitePath || input.lead.generatedSitePath || ""}`,
+    `Findings: ${input.lead.findings || ""}`,
+    `Updated At: ${input.lead.updatedAt}`
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+
+  try {
+    const contactId = await upsertContact(c, input.lead, tags);
+    await addTags(c, contactId, tags);
+    await addNote(c, contactId, note);
+    runtimeInfo("ghl", "prospector lead synced", {
+      leadId: input.lead.id,
+      contactId,
+      deployedSiteUrl: input.deployedSiteUrl || ""
+    });
+    return { synced: true, contactId };
+  } catch (error) {
+    runtimeError("ghl", "prospector sync failed", error, {
+      leadId: input.lead.id,
+      deployedSiteUrl: input.deployedSiteUrl || ""
     });
     return { synced: false, error: String(error) };
   }

@@ -11,11 +11,11 @@ function safeSlug(value: string): string {
   return String(value || 'prospect-site').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/-{2,}/g, '-').replace(/(^-|-$)/g, '').slice(0, 80) || 'prospect-site';
 }
 
-async function deployStaticFile(htmlPath: string): Promise<string> {
+async function deployStaticFile(htmlPath: string, deployName?: string): Promise<string> {
   const source = path.resolve(htmlPath);
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'trd-prospect-'));
   await fs.copyFile(source, path.join(tempDir, 'index.html'));
-  const projectName = safeSlug(path.basename(source, path.extname(source)));
+  const projectName = safeSlug(deployName || path.basename(source, path.extname(source)));
   const { stdout, stderr } = await execFileAsync('vercel', ['deploy', '--yes', '--prod', '--name', projectName], { cwd: tempDir, env: process.env, maxBuffer: 1024 * 1024 * 8 });
   const combined = `${stdout}\n${stderr}`;
   const url = combined.split(/\s+/).find((token) => token.startsWith('https://'));
@@ -31,9 +31,14 @@ export async function deployGeneratedProspects(limit = 10): Promise<{ deployed: 
       .slice(0, limit);
 
     for (const lead of ready) {
-      const url = await deployStaticFile(lead.generatedSitePath!);
+      const deployInputPath = lead.generatedSitePath!;
+      const preferredName = safeSlug(lead.prospectDeployName || path.basename(deployInputPath, path.extname(deployInputPath)));
+      const url = await deployStaticFile(deployInputPath, preferredName);
       lead.deployedSiteUrl = url;
       lead.generationStatus = 'deployed';
+      lead.prospectorPhase = 2;
+      lead.prospectorPhaseStatus = 'phase2_deployed';
+      lead.prospectDeployName = preferredName;
       lead.handoffStatus = lead.handoffStatus === 'ready_for_review' ? 'ready_for_review' : lead.handoffStatus;
       lead.updatedAt = new Date().toISOString();
       done.push(lead.id);

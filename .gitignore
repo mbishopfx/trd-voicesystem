@@ -1,5 +1,11 @@
 node_modules/
 dist/
 .env
+.env.local
+.vercel/
+deploy-temp/
+data/generated-sites/
+data/generated-screenshots/
+data/state/runtime-logs.jsonl
 data/state/leads.json
 data/state/templates.json

@@ -89,6 +89,7 @@ export const config = {
   vapiInboundAssistantId: process.env.VAPI_INBOUND_ASSISTANT_ID?.trim() || "",
   vapiAssistantIdFemale: process.env.VAPI_ASSISTANT_ID_FEMALE?.trim() || "",
   vapiAssistantIdMale: process.env.VAPI_ASSISTANT_ID_MALE?.trim() || "",
+  vapiProspectorAssistantId: process.env.VAPI_PROSPECTOR_ASSISTANT_ID?.trim() || "",
   vapiPhoneNumberId: process.env.VAPI_PHONE_NUMBER_ID?.trim() || "",
   twilioAccountSid: process.env.TWILIO_ACCOUNT_SID?.trim() || "",
   twilioAuthToken: process.env.TWILIO_AUTH_TOKEN?.trim() || "",
@@ -104,6 +105,7 @@ export const config = {
   googleCalendarWebhookSecret: process.env.GOOGLE_CALENDAR_WEBHOOK_SECRET?.trim() || "",
   geminiApiKey: process.env.GEMINI_API_KEY?.trim() || "",
   geminiModel: process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash",
+  geminiProspectorModel: process.env.GEMINI_PROSPECTOR_MODEL?.trim() || "gemini-3.0-flash",
   googleApiKey:
     process.env.GOOGLE_API_KEY?.trim() ||
     process.env.GOOGLE_SEARCH_API_KEY?.trim() ||
@@ -118,6 +120,7 @@ export const config = {
     process.env.WIN_SMS_TEMPLATE?.trim() ||
     "Hi {{firstName}}, thanks for speaking with us. Book your free AI Search Optimization strategy session here: {{bookingUrl}}",
   ghlSyncOnCallAttempt: asBool("GHL_SYNC_ON_CALL_ATTEMPT", false),
+  prospectorGhlAutoSync: asBool("PROSPECTOR_GHL_AUTO_SYNC", true),
   retargetAutoExport: asBool("RETARGET_AUTO_EXPORT", true)
 };
 
