@@ -106,6 +106,9 @@ Twilio fallback (if Vapi phone number UUID is unavailable):
 - `VAPI_PROSPECTOR_ASSISTANT_ID` (required for Prospector phase 5 specialized calling)
 - `GEMINI_PROSPECTOR_MODEL=gemini-3.0-flash` (recommended for Prospector landing page generation)
 - `PROSPECTOR_GHL_AUTO_SYNC=true` (auto-create/sync Prospector contacts + notes/tags)
+- `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` (Google Maps/Places + Search enrichment)
+- `XAI_API_KEY` (optional lead-scoring/enrichment fallback chain)
+- `FIRECRAWL_API_KEY` (optional website scrape enrichment for contact + positioning signals)
 
 ## Recommended env for persistent cloud state
 
@@ -198,6 +201,16 @@ Sample smoke CSV (provided in repo):
 - `GET /api/prospector/leads`
 - `GET /api/prospector/runs`
 - `GET /api/prospector/records` (DB-backed phase records/logs when `DATABASE_URL` is configured)
+
+## Prospector provider stack
+
+Prospector discovery/enrichment uses a resilient provider chain so one provider failure does not stop lead generation:
+
+- Google Places API (New)
+- Google Places API (Legacy) fallback
+- Google Custom Search fallback (`GOOGLE_CSE_ID`)
+- Firecrawl website scrape enrichment (optional)
+- xAI/Gemini lead scoring and opportunity angle generation (optional)
 
 ## Vapi tools endpoints
 

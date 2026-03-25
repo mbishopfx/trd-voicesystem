@@ -106,6 +106,12 @@ export const config = {
   geminiApiKey: process.env.GEMINI_API_KEY?.trim() || "",
   geminiModel: process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash",
   geminiProspectorModel: process.env.GEMINI_PROSPECTOR_MODEL?.trim() || "gemini-3.0-flash",
+  xaiApiKey: process.env.XAI_API_KEY?.trim() || "",
+  xaiBaseUrl: process.env.XAI_BASE_URL?.trim() || "https://api.x.ai/v1",
+  xaiModel: process.env.XAI_MODEL?.trim() || "grok-3-mini-beta",
+  firecrawlApiKey: process.env.FIRECRAWL_API_KEY?.trim() || "",
+  firecrawlBaseUrl: process.env.FIRECRAWL_BASE_URL?.trim() || "https://api.firecrawl.dev",
+  firecrawlTimeoutMs: Math.max(2000, asInt("FIRECRAWL_TIMEOUT_MS", 15000)),
   googleApiKey:
     process.env.GOOGLE_API_KEY?.trim() ||
     process.env.GOOGLE_SEARCH_API_KEY?.trim() ||
