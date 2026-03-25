@@ -662,6 +662,7 @@
 
       async function probeRoute(label, path, options = {}) {
         const started = Date.now();
+        const required = options.required !== false;
         try {
           const res = await fetch(path, {
             method: options.method || "GET",
@@ -670,7 +671,7 @@
           const latencyMs = Math.max(0, Date.now() - started);
           const status = Number(res.status || 0);
           const ok = typeof options.accept === "function" ? Boolean(options.accept(status)) : res.ok;
-          return { label, path, ok, status, latencyMs };
+          return { label, path, ok, status, latencyMs, required };
         } catch (error) {
           const latencyMs = Math.max(0, Date.now() - started);
           return {
@@ -679,6 +680,7 @@
             ok: false,
             status: 0,
             latencyMs,
+            required,
             error: String(error).slice(0, 140)
           };
         }
@@ -694,12 +696,18 @@
         const checks = state.routeHealth.checks || [];
         const healthy = Boolean(state.routeHealth.healthy);
         const checkedAt = state.routeHealth.checkedAt ? new Date(state.routeHealth.checkedAt).toLocaleTimeString() : "--";
+        const requiredFailures = checks.filter((check) => check.required !== false && !check.ok).length;
+        const optionalFailures = checks.filter((check) => check.required === false && !check.ok).length;
 
         banner.className = `rounded-2xl border p-4 ${healthy ? "border-teal-300 bg-teal-50/50" : "border-amber-300 bg-amber-50/50"}`;
         summary.className = `mt-1 text-sm font-semibold ${healthy ? "text-teal-700" : "text-amber-700"}`;
         summary.textContent = healthy
-          ? "All core routes are connected. Safe to launch campaigns."
-          : "One or more routes failed. Fix connection issues before launch.";
+          ? optionalFailures > 0
+            ? `Core routes are connected. ${optionalFailures} optional check(s) failed; launch is still allowed.`
+            : "All core routes are connected. Safe to launch campaigns."
+          : requiredFailures > 0
+          ? "One or more core routes failed. Fix connection issues before launch."
+          : "Healthcheck warning detected.";
         updated.textContent = `Updated ${checkedAt}`;
 
         if (!checks.length) {
@@ -710,9 +718,18 @@
         root.innerHTML = checks
           .map((check) => {
             const ok = Boolean(check.ok);
-            const statusText = ok ? "Connected" : check.status ? `Error ${check.status}` : "Unreachable";
+            const required = check.required !== false;
+            const statusText = ok
+              ? "Connected"
+              : required
+              ? check.status
+                ? `Error ${check.status}`
+                : "Unreachable"
+              : check.status
+              ? `Optional Error ${check.status}`
+              : "Optional Unreachable";
             return `<div class="rounded-lg border ${ok ? "border-teal-300 bg-white" : "border-amber-300 bg-white"} p-3">
-              <div class="text-[10px] font-bold uppercase tracking-widest text-outline">${escapeHtml(check.label)}</div>
+              <div class="text-[10px] font-bold uppercase tracking-widest text-outline">${escapeHtml(check.label)}${required ? "" : " (Optional)"}</div>
               <div class="mt-1 text-sm font-bold ${ok ? "text-teal-700" : "text-amber-700"}">${escapeHtml(statusText)}</div>
               <div class="mt-1 text-[11px] text-outline">${escapeHtml(check.path)} · ${escapeHtml(String(check.latencyMs || 0))}ms</div>
             </div>`;
@@ -735,13 +752,15 @@
           }),
           probeRoute("Tools Webhook Route", "/tools/vapi", {
             method: "OPTIONS",
+            required: false,
             accept: (status) => status >= 200 && status < 500 && status !== 404
           })
         ]);
 
+        const requiredChecks = checks.filter((check) => check.required !== false);
         state.routeHealth = {
           checks,
-          healthy: checks.every((check) => check.ok),
+          healthy: requiredChecks.every((check) => check.ok),
           checkedAt: Date.now()
         };
         renderRouteHealth();

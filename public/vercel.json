@@ -10,6 +10,10 @@
       "destination": "https://outbound-voice-bot-production.up.railway.app/webhooks/:path*"
     },
     {
+      "source": "/tools/:path*",
+      "destination": "https://outbound-voice-bot-production.up.railway.app/tools/:path*"
+    },
+    {
       "source": "/health",
       "destination": "https://outbound-voice-bot-production.up.railway.app/health"
     },
