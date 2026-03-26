@@ -6,7 +6,7 @@ export interface RuntimeLogEntry {
   at: string;
   ts: number;
   level: "info" | "error";
-  scope: "worker" | "dialer" | "ingest" | "webhook" | "server" | "ghl" | "agent" | "twilio" | "vapi";
+  scope: "worker" | "dialer" | "ingest" | "webhook" | "server" | "ghl" | "agent" | "twilio" | "vapi" | "scheduler";
   message: string;
 }
 

@@ -25,6 +25,18 @@ function asBool(name: string, fallback: boolean): boolean {
   return ["1", "true", "yes", "y", "on"].includes(raw.trim().toLowerCase());
 }
 
+function asHourList(name: string, fallback: number[]): number[] {
+  const raw = process.env[name];
+  if (!raw || !raw.trim()) return fallback;
+  const values = raw
+    .split(",")
+    .map((chunk) => Number(chunk.trim()))
+    .filter((value) => Number.isFinite(value))
+    .map((value) => Math.min(23, Math.max(0, Math.trunc(value))));
+  const unique = Array.from(new Set(values)).sort((a, b) => a - b);
+  return unique.length ? unique : fallback;
+}
+
 export const config = {
   port: asInt("PORT", 3000),
   databaseUrl:
@@ -48,6 +60,8 @@ export const config = {
   templateLockPath: path.resolve(cwd, "data", "state", "templates.lock"),
   inboundStatePath: path.resolve(cwd, "data", "state", "inbound.json"),
   inboundLockPath: path.resolve(cwd, "data", "state", "inbound.lock"),
+  bulkSchedulerStatePath: path.resolve(cwd, "data", "state", "bulk-scheduler.json"),
+  bulkSchedulerLockPath: path.resolve(cwd, "data", "state", "bulk-scheduler.lock"),
   generatedSitesDir: path.resolve(cwd, "data", "generated-sites"),
   generatedScreenshotsDir: path.resolve(cwd, "data", "generated-screenshots"),
 
@@ -81,6 +95,15 @@ export const config = {
   dialerTickMs: Math.max(100, asInt("DIALER_TICK_MS", 250)),
   reconcileIntervalSeconds: Math.max(15, asInt("RECONCILE_INTERVAL_SECONDS", 60)),
   reconcileMinAgeSeconds: Math.max(30, asInt("RECONCILE_MIN_AGE_SECONDS", 180)),
+  bulkSchedulerEnabled: asBool("BULK_SCHEDULER_ENABLED", false),
+  bulkSchedulerTimezone: process.env.BULK_SCHEDULER_TIMEZONE?.trim() || "America/New_York",
+  bulkSchedulerHours: asHourList("BULK_SCHEDULER_HOURS", [9, 11, 14]),
+  bulkSchedulerBatchSize: Math.max(1, Math.min(200, asInt("BULK_SCHEDULER_BATCH_SIZE", 50))),
+  bulkSchedulerSamplePoolSize: Math.max(50, Math.min(2000, asInt("BULK_SCHEDULER_SAMPLE_POOL_SIZE", 400))),
+  bulkSchedulerTickSeconds: Math.max(10, Math.min(300, asInt("BULK_SCHEDULER_TICK_SECONDS", 30))),
+  bulkSchedulerRunWindowMinutes: Math.max(1, Math.min(15, asInt("BULK_SCHEDULER_RUN_WINDOW_MINUTES", 4))),
+  bulkSchedulerCampaignName:
+    process.env.BULK_SCHEDULER_CAMPAIGN_NAME?.trim() || "GHL Random Daily Campaign",
 
   vapiApiKey: process.env.VAPI_API_KEY?.trim() || "",
   vapiPublicKey: process.env.VAPI_PUBLIC_KEY?.trim() || "",

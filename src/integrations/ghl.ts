@@ -32,6 +32,11 @@ export interface GhlSmartListFetchResult {
   attempts: Array<{ mode: string; page: number; status: number; count: number }>;
 }
 
+export interface GhlLocationContactsResult {
+  contacts: GhlSmartListContact[];
+  attempts: Array<{ page: number; status: number; count: number }>;
+}
+
 export interface GhlSyncInput {
   lead: Lead;
   outcome?: string;
@@ -51,6 +56,14 @@ export interface ProspectorGhlSyncInput {
   deployedSiteUrl?: string;
   generatedSitePath?: string;
   force?: boolean;
+}
+
+export interface BulkSchedulerGhlLogInput {
+  lead: Lead;
+  runId: string;
+  trigger: "scheduled" | "manual";
+  contactId?: string;
+  queuedAt?: string;
 }
 
 function creds(): GhlCredentials | undefined {
@@ -244,6 +257,60 @@ export async function fetchSmartListContacts(
     contacts: contacts.length,
     attempts: attempts.length,
     mode: selectedMode || "none"
+  });
+  return { contacts, attempts };
+}
+
+export async function fetchLocationContacts(opts?: {
+  pageLimit?: number;
+  maxPages?: number;
+}): Promise<GhlLocationContactsResult> {
+  const c = creds();
+  if (!c) {
+    throw new Error("GHL not configured");
+  }
+
+  const pageLimit = Math.min(200, Math.max(10, Math.trunc(opts?.pageLimit || 100)));
+  const maxPages = Math.min(50, Math.max(1, Math.trunc(opts?.maxPages || 10)));
+  const attempts: Array<{ page: number; status: number; count: number }> = [];
+  const unique = new Map<string, GhlSmartListContact>();
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const payload: Record<string, unknown> = {
+      locationId: c.locationId,
+      page,
+      pageLimit
+    };
+
+    const response = await ghlRequest(c, "POST", "/contacts/search", payload);
+    const rows = response.status >= 200 && response.status < 300 ? parseContacts(response.data) : [];
+    attempts.push({ page, status: response.status, count: rows.length });
+    runtimeInfo("ghl", "location contacts fetch attempt", {
+      page,
+      status: response.status,
+      count: rows.length
+    });
+
+    if (!(response.status >= 200 && response.status < 300)) {
+      if (page === 1) {
+        throw new Error(`Unable to fetch location contacts from GHL (status=${response.status}).`);
+      }
+      break;
+    }
+
+    for (const row of rows) {
+      const mapped = mapSmartListContact(row);
+      const dedupeKey = mapped.id || mapped.phone || mapped.email || JSON.stringify(row);
+      unique.set(dedupeKey, mapped);
+    }
+
+    if (rows.length < pageLimit) break;
+  }
+
+  const contacts = Array.from(unique.values());
+  runtimeInfo("ghl", "location contacts fetch complete", {
+    contacts: contacts.length,
+    attempts: attempts.length
   });
   return { contacts, attempts };
 }
@@ -444,6 +511,50 @@ export async function syncProspectorContactToGhl(input: ProspectorGhlSyncInput):
     runtimeError("ghl", "prospector sync failed", error, {
       leadId: input.lead.id,
       deployedSiteUrl: input.deployedSiteUrl || ""
+    });
+    return { synced: false, error: String(error) };
+  }
+}
+
+export async function logBulkSchedulerQueuedContact(input: BulkSchedulerGhlLogInput): Promise<GhlSyncResult> {
+  const c = creds();
+  if (!c) {
+    return { synced: false, error: "GHL not configured" };
+  }
+
+  const tags = compactTags([
+    "jarvis-voice",
+    "jarvis-bulk-scheduler",
+    "bulk-campaign-queued",
+    input.trigger === "scheduled" ? "bulk-run:scheduled" : "bulk-run:manual"
+  ]);
+  const queuedAt = input.queuedAt || input.lead.updatedAt || "";
+  const note = [
+    "Jarvis bulk campaign queued this contact.",
+    `Run ID: ${input.runId}`,
+    `Trigger: ${input.trigger}`,
+    `Campaign: ${input.lead.campaign || config.campaignName}`,
+    `Lead ID: ${input.lead.id}`,
+    `Queued At: ${queuedAt}`,
+    `Phone: ${input.lead.phone || ""}`
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  try {
+    const contactId = input.contactId || (await upsertContact(c, input.lead, tags));
+    await addTags(c, contactId, tags);
+    await addNote(c, contactId, note);
+    runtimeInfo("ghl", "bulk scheduler lead queued note logged", {
+      leadId: input.lead.id,
+      contactId,
+      runId: input.runId
+    });
+    return { synced: true, contactId };
+  } catch (error) {
+    runtimeError("ghl", "bulk scheduler queue log failed", error, {
+      leadId: input.lead.id,
+      runId: input.runId
     });
     return { synced: false, error: String(error) };
   }

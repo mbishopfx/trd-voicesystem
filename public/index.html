@@ -68,6 +68,10 @@
             <span class="material-symbols-outlined">campaign</span>
             Campaigns
           </a>
+          <a data-nav-tab="scheduler" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-scheduler">
+            <span class="material-symbols-outlined">schedule</span>
+            Auto Campaigns
+          </a>
           <a data-nav-tab="prospector" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-prospector">
             <span class="material-symbols-outlined">travel_explore</span>
             Prospector
@@ -97,6 +101,7 @@
         <nav class="hidden items-center gap-6 lg:flex">
           <a data-top-tab="dashboard" class="top-tab flex h-16 items-center border-b-2 border-teal-600 text-sm font-semibold text-teal-600" href="#tab-dashboard">System Status</a>
           <a data-top-tab="campaigns" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-campaigns">Agent Queue</a>
+          <a data-top-tab="scheduler" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-scheduler">Auto Campaigns</a>
           <a data-top-tab="prospector" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-prospector">Prospector</a>
           <a data-top-tab="live-monitor" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-live-monitor">Real-time Alerts</a>
         </nav>
@@ -416,6 +421,89 @@
           </section>
         </section>
 
+        <section id="page-scheduler" data-page="scheduler" class="hidden space-y-6">
+          <section class="rounded-2xl bg-surface-container-low p-6 shadow-sm">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 class="font-headline text-xl font-extrabold text-on-surface">Bulk Scheduler Autopilot</h3>
+                <p class="text-sm text-outline">Runs daily at 9:00 AM, 11:00 AM, and 2:00 PM EST by default. Each run samples random GHL contacts, queues 50, and logs tags/notes in GHL.</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span id="schedulerEnabledBadge" class="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700">Disabled</span>
+                <button id="schedulerToggleBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Enable</button>
+                <button id="schedulerRunNowBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Run Now</button>
+                <button id="schedulerRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh</button>
+              </div>
+            </div>
+
+            <div class="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Timezone
+                <input id="schedulerTimezone" type="text" placeholder="America/New_York" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Hours (24h, comma-separated)
+                <input id="schedulerHours" type="text" placeholder="9,11,14" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Batch Size
+                <input id="schedulerBatchSize" type="number" min="1" max="200" value="50" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+            </div>
+
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Sample Pool Size
+                <input id="schedulerSamplePoolSize" type="number" min="50" max="2000" value="400" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Run Window (minutes)
+                <input id="schedulerRunWindowMinutes" type="number" min="1" max="15" value="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Campaign Name
+                <input id="schedulerCampaignName" type="text" placeholder="GHL Random Daily Campaign" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+            </div>
+
+            <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-secondary-fixed/30 bg-secondary-fixed/20 p-4">
+              <div class="text-xs text-on-secondary-fixed-variant">
+                <p><strong>Status:</strong> <span id="schedulerRunningState">--</span></p>
+                <p><strong>Last Tick:</strong> <span id="schedulerLastTick">--</span></p>
+                <p><strong>Upcoming Runs:</strong> <span id="schedulerNextRuns">--</span></p>
+              </div>
+              <div class="flex items-center gap-3">
+                <button id="schedulerSaveSettingsBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Save Settings</button>
+              </div>
+            </div>
+            <div id="schedulerResult" class="mt-4 rounded-xl border border-outline-variant/30 bg-white p-4 text-sm text-on-surface">Scheduler idle.</div>
+          </section>
+
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="mb-4 flex items-center justify-between">
+              <h3 class="font-headline text-lg font-extrabold text-on-surface">Recent Scheduler Runs</h3>
+              <span class="text-xs text-outline">Newest first</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-surface-container-low/40">
+                  <tr>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Run</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Trigger</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Fetched / Selected</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Queued / GHL Notes</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Started</th>
+                  </tr>
+                </thead>
+                <tbody id="schedulerRunsRows" class="divide-y divide-outline-variant/10"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="mb-4 flex items-center justify-between">
+              <h3 class="font-headline text-lg font-extrabold text-on-surface">Scheduler Runtime Logs</h3>
+              <span class="rounded border border-teal-200 bg-teal-50 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-teal-700">Scope: scheduler</span>
+            </div>
+            <div id="schedulerLogsBody" class="max-h-[360px] space-y-2 overflow-auto rounded-xl bg-slate-950 p-4 text-xs text-slate-200 no-scrollbar"></div>
+          </section>
+        </section>
+
         <section id="page-prospector" data-page="prospector" class="hidden space-y-6">
           <section class="rounded-2xl bg-surface-container-low p-6 shadow-sm">
             <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -639,7 +727,7 @@
     </main>
 
     <script>
-      const TABS = ["dashboard", "campaigns", "prospector", "live-monitor", "analytics", "settings"];
+      const TABS = ["dashboard", "campaigns", "scheduler", "prospector", "live-monitor", "analytics", "settings"];
       const state = {
         activeTab: "dashboard",
         files: [],
@@ -647,6 +735,8 @@
         leads: [],
         prospectorRuns: [],
         prospectorRecords: [],
+        schedulerStatus: null,
+        schedulerLogs: [],
         routeHealth: {
           healthy: false,
           checks: [],
@@ -689,6 +779,121 @@
 
       function prospectorDryRunEnabled() {
         return Boolean(document.getElementById("prospectorDryRunCalls")?.checked);
+      }
+
+      function parseSchedulerHours(text) {
+        return String(text || "")
+          .split(",")
+          .map((part) => Number(part.trim()))
+          .filter((value) => Number.isFinite(value))
+          .map((value) => Math.min(23, Math.max(0, Math.trunc(value))));
+      }
+
+      function schedulerSettingsPayload() {
+        return {
+          timezone: document.getElementById("schedulerTimezone")?.value?.trim() || undefined,
+          scheduleHours: parseSchedulerHours(document.getElementById("schedulerHours")?.value || ""),
+          batchSize: Number(document.getElementById("schedulerBatchSize")?.value || 50),
+          samplePoolSize: Number(document.getElementById("schedulerSamplePoolSize")?.value || 400),
+          runWindowMinutes: Number(document.getElementById("schedulerRunWindowMinutes")?.value || 4),
+          campaignName: document.getElementById("schedulerCampaignName")?.value?.trim() || undefined
+        };
+      }
+
+      function applySchedulerSettingsToForm(settings) {
+        if (!settings) return;
+        const setVal = (id, value) => {
+          const node = document.getElementById(id);
+          if (node && value !== undefined && value !== null) node.value = String(value);
+        };
+        setVal("schedulerTimezone", settings.timezone || "America/New_York");
+        setVal("schedulerHours", Array.isArray(settings.scheduleHours) ? settings.scheduleHours.join(",") : "9,11,14");
+        setVal("schedulerBatchSize", settings.batchSize || 50);
+        setVal("schedulerSamplePoolSize", settings.samplePoolSize || 400);
+        setVal("schedulerRunWindowMinutes", settings.runWindowMinutes || 4);
+        setVal("schedulerCampaignName", settings.campaignName || "GHL Random Daily Campaign");
+      }
+
+      function renderSchedulerRuns(runs) {
+        const root = document.getElementById("schedulerRunsRows");
+        if (!root) return;
+        if (!Array.isArray(runs) || runs.length === 0) {
+          root.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-sm text-outline">No scheduler runs yet.</td></tr>`;
+          return;
+        }
+
+        root.innerHTML = runs
+          .slice(0, 60)
+          .map((run) => {
+            const startedAt = run.startedAt ? new Date(run.startedAt).toLocaleString() : "--";
+            const runId = String(run.id || "--");
+            return `<tr>
+              <td class="px-4 py-3">${escapeHtml(runId)}</td>
+              <td class="px-4 py-3">${escapeHtml(run.trigger || "--")}</td>
+              <td class="px-4 py-3">${escapeHtml(run.status || "--")}</td>
+              <td class="px-4 py-3">${escapeHtml(String(run.fetchedContacts || 0))} / ${escapeHtml(String(run.selectedContacts || 0))}</td>
+              <td class="px-4 py-3">${escapeHtml(String(run.queuedLeads || 0))} / ${escapeHtml(String(run.ghlNotesLogged || 0))}</td>
+              <td class="px-4 py-3 text-xs">${escapeHtml(startedAt)}</td>
+            </tr>`;
+          })
+          .join("");
+      }
+
+      function renderSchedulerLogs(logs) {
+        const root = document.getElementById("schedulerLogsBody");
+        if (!root) return;
+        if (!Array.isArray(logs) || logs.length === 0) {
+          root.innerHTML = `<p class="text-slate-400">No scheduler logs yet.</p>`;
+          return;
+        }
+
+        root.innerHTML = logs
+          .slice(-140)
+          .reverse()
+          .map((row) => {
+            const ts = new Date(row.ts || Date.now()).toLocaleTimeString();
+            const level = String(row.level || "info");
+            const msg = escapeHtml(String(row.message || ""));
+            const levelClass = level === "error" ? "text-amber-300" : "text-teal-300";
+            return `<div><span class="${levelClass}">[${ts}]</span> ${msg}</div>`;
+          })
+          .join("");
+      }
+
+      function renderSchedulerStatus(status) {
+        const badge = document.getElementById("schedulerEnabledBadge");
+        const running = document.getElementById("schedulerRunningState");
+        const lastTick = document.getElementById("schedulerLastTick");
+        const nextRuns = document.getElementById("schedulerNextRuns");
+        const toggleBtn = document.getElementById("schedulerToggleBtn");
+        if (!badge || !running || !lastTick || !nextRuns || !toggleBtn) return;
+
+        const settings = status?.settings || {};
+        const enabled = Boolean(settings.enabled);
+        const isRunning = Boolean(status?.running);
+        badge.textContent = enabled ? "Enabled" : "Disabled";
+        badge.className = enabled
+          ? "rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-teal-700"
+          : "rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700";
+        toggleBtn.textContent = enabled ? "Disable" : "Enable";
+        running.textContent = isRunning ? "Run in progress" : "Idle";
+        lastTick.textContent = status?.lastTickAt ? new Date(status.lastTickAt).toLocaleString() : "--";
+        nextRuns.textContent = Array.isArray(status?.upcomingRunTimes) && status.upcomingRunTimes.length
+          ? status.upcomingRunTimes.join(" | ")
+          : "--";
+      }
+
+      async function refreshScheduler() {
+        const [statusResp, logsResp] = await Promise.all([
+          getJson("/api/bulk-scheduler/status"),
+          getJson("/api/logs/worker?scope=scheduler&limit=160")
+        ]);
+        state.schedulerStatus = statusResp;
+        state.schedulerLogs = logsResp.logs || [];
+        applySchedulerSettingsToForm(statusResp.settings || {});
+        renderSchedulerStatus(statusResp);
+        renderSchedulerRuns(statusResp.runs || []);
+        renderSchedulerLogs(state.schedulerLogs);
       }
 
       function artifactLookupValue() {
@@ -1567,6 +1772,57 @@
           }
         });
 
+        document.getElementById("schedulerRefreshBtn").addEventListener("click", async () => {
+          try {
+            await refreshScheduler();
+            showToast("Scheduler status refreshed.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("schedulerSaveSettingsBtn").addEventListener("click", async () => {
+          try {
+            const payload = schedulerSettingsPayload();
+            const data = await postJson("/api/bulk-scheduler/settings", payload);
+            state.schedulerStatus = data.status || data;
+            await refreshScheduler();
+            showToast("Scheduler settings saved.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("schedulerToggleBtn").addEventListener("click", async () => {
+          try {
+            const enabled = Boolean(state.schedulerStatus?.settings?.enabled);
+            await postJson("/api/bulk-scheduler/toggle", { enabled: !enabled });
+            await refreshScheduler();
+            showToast(!enabled ? "Scheduler enabled." : "Scheduler disabled.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("schedulerRunNowBtn").addEventListener("click", async () => {
+          try {
+            const data = await postJson("/api/bulk-scheduler/run", {});
+            await Promise.all([refreshScheduler(), refreshStatus(), refreshLeads(), refreshLogs()]);
+            const result = document.getElementById("schedulerResult");
+            if (result) {
+              const run = data.run || {};
+              result.innerHTML = `<div class="space-y-1">
+                <p><strong>Run:</strong> ${escapeHtml(run.id || "--")} (${escapeHtml(run.status || "--")})</p>
+                <p><strong>Summary:</strong> ${escapeHtml(run.summary || "--")}</p>
+                <p><strong>Queued:</strong> ${escapeHtml(String(run.queuedLeads || 0))} | <strong>GHL Notes:</strong> ${escapeHtml(String(run.ghlNotesLogged || 0))}</p>
+              </div>`;
+            }
+            showToast("Scheduler run completed.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
         document.getElementById("routeHealthRefreshBtn").addEventListener("click", async () => {
           try {
             await refreshRouteHealth();
@@ -1621,6 +1877,7 @@
           refreshStatus(),
           refreshLogs(),
           refreshLeads(),
+          refreshScheduler(),
           refreshProspectorRuns(),
           refreshAnalytics(),
           refreshSettings(),
@@ -1633,6 +1890,7 @@
         setInterval(() => {
           if (state.activeTab === "analytics") refreshAnalytics().catch(() => {});
           if (state.activeTab === "settings") refreshSettings().catch(() => {});
+          if (state.activeTab === "scheduler") refreshScheduler().catch(() => {});
           if (state.activeTab === "prospector") refreshProspectorRuns().catch(() => {});
         }, 15000);
       }

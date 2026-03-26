@@ -88,6 +88,12 @@ import {
 } from "./integrations/calendly.js";
 import { generateManualCallDraft, isGeminiConfigured } from "./integrations/gemini.js";
 import { latestRuntimeLogTs, listRuntimeLogs, runtimeError, runtimeInfo } from "./runtimeLogs.js";
+import {
+  getBulkCampaignSchedulerStatus,
+  runBulkSchedulerCampaign,
+  setBulkCampaignSchedulerEnabled,
+  updateBulkCampaignSchedulerSettings
+} from "./bulkCampaignScheduler.js";
 
 type RawBodyRequest = Request & { rawBody?: string };
 let reconcileLoopStarted = false;
@@ -2057,6 +2063,10 @@ export function createServer() {
         postCallDelaySeconds: config.postCallDelaySeconds,
         retargetAutoExport: config.retargetAutoExport,
         retargetDir: config.retargetDir,
+        bulkSchedulerEnabled: config.bulkSchedulerEnabled,
+        bulkSchedulerTimezone: config.bulkSchedulerTimezone,
+        bulkSchedulerHours: config.bulkSchedulerHours,
+        bulkSchedulerBatchSize: config.bulkSchedulerBatchSize,
         templateCount: Object.keys(templateState.templates).length,
         activeTemplateId: templateState.activeTemplateId,
         toolCatalogSize: TOOL_CATALOG.length
@@ -2120,6 +2130,58 @@ export function createServer() {
     res.json({ ok: true, result });
   });
 
+  app.get("/api/bulk-scheduler/status", async (_req: Request, res: Response) => {
+    const status = await getBulkCampaignSchedulerStatus();
+    res.json({ ok: true, ...status });
+  });
+
+  app.post("/api/bulk-scheduler/toggle", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const enabled = asOptionalBool(body.enabled);
+    if (enabled === undefined) {
+      res.status(400).json({ ok: false, error: "enabled must be true or false" });
+      return;
+    }
+    const settings = await setBulkCampaignSchedulerEnabled(enabled);
+    const status = await getBulkCampaignSchedulerStatus();
+    res.json({ ok: true, settings, status });
+  });
+
+  app.post("/api/bulk-scheduler/settings", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const scheduleHoursRaw = Array.isArray(body.scheduleHours)
+      ? body.scheduleHours
+      : typeof body.scheduleHours === "string"
+      ? body.scheduleHours.split(",")
+      : [];
+    const parsedScheduleHours = scheduleHoursRaw
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value))
+      .map((value) => Math.min(23, Math.max(0, Math.trunc(value))));
+
+    const patch: Parameters<typeof updateBulkCampaignSchedulerSettings>[0] = {
+      timezone: safeString(body.timezone),
+      campaignName: safeString(body.campaignName),
+      runWindowMinutes: asOptionalInt(body.runWindowMinutes, 1, 15),
+      batchSize: asOptionalInt(body.batchSize, 1, 200),
+      samplePoolSize: asOptionalInt(body.samplePoolSize, 50, 2000),
+      enabled: asOptionalBool(body.enabled)
+    };
+    if (parsedScheduleHours.length > 0) {
+      patch.scheduleHours = parsedScheduleHours;
+    }
+
+    const settings = await updateBulkCampaignSchedulerSettings(patch);
+    const status = await getBulkCampaignSchedulerStatus();
+    res.json({ ok: true, settings, status });
+  });
+
+  app.post("/api/bulk-scheduler/run", async (_req: Request, res: Response) => {
+    const run = await runBulkSchedulerCampaign("manual");
+    const status = await getBulkCampaignSchedulerStatus();
+    res.json({ ok: true, run, status });
+  });
+
   app.get("/api/logs/worker", (req: Request, res: Response) => {
     const scopeRaw = safeString(req.query.scope)?.toLowerCase();
     const scope =
@@ -2131,7 +2193,8 @@ export function createServer() {
       scopeRaw === "ghl" ||
       scopeRaw === "agent" ||
       scopeRaw === "twilio" ||
-      scopeRaw === "vapi"
+      scopeRaw === "vapi" ||
+      scopeRaw === "scheduler"
         ? scopeRaw
         : undefined;
     const limit = asOptionalInt(req.query.limit, 1, 1000) || 200;

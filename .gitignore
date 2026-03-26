@@ -9,3 +9,5 @@ data/generated-screenshots/
 data/state/runtime-logs.jsonl
 data/state/leads.json
 data/state/templates.json
+data/state/bulk-scheduler.json
+data/state/bulk-scheduler.lock

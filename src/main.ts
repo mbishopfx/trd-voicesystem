@@ -6,6 +6,7 @@ import { TokenBucket } from "./rateLimiter.js";
 import { dialOneLead } from "./worker.js";
 import { isMainModule, sleep } from "./utils.js";
 import { runtimeError, runtimeInfo } from "./runtimeLogs.js";
+import { startBulkCampaignScheduler } from "./bulkCampaignScheduler.js";
 
 async function startIngestionScheduler(): Promise<void> {
   if (config.runIngestOnStart) {
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
   });
 
   await startIngestionScheduler();
+  await startBulkCampaignScheduler();
   await startDialer();
 }
 
