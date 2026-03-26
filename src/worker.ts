@@ -72,6 +72,37 @@ function shouldRetry(statusCode: number): boolean {
   return [408, 409, 425, 429, 500, 502, 503, 504].includes(statusCode);
 }
 
+function isOverConcurrencyLimitError(body?: string): boolean {
+  const raw = String(body || "").trim();
+  if (!raw) return false;
+  const lowered = raw.toLowerCase();
+  if (lowered.includes("over concurrency limit")) return true;
+  if (lowered.includes("concurrencyblocked")) return true;
+  if (lowered.includes("remainingconcurrentcalls")) return true;
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      message?: string;
+      subscriptionLimits?: { concurrencyBlocked?: boolean; remainingConcurrentCalls?: number };
+    };
+    if (String(parsed.message || "").toLowerCase().includes("over concurrency limit")) return true;
+    if (parsed.subscriptionLimits?.concurrencyBlocked) return true;
+    if (typeof parsed.subscriptionLimits?.remainingConcurrentCalls === "number") {
+      return parsed.subscriptionLimits.remainingConcurrentCalls < 1;
+    }
+  } catch {
+    // body is not JSON
+  }
+
+  return false;
+}
+
+function shouldRetryHttpError(error: HttpError): boolean {
+  if (shouldRetry(error.status)) return true;
+  if (error.status === 400 && isOverConcurrencyLimitError(error.body)) return true;
+  return false;
+}
+
 function computeBackoffMs(attempt: number): number {
   const exponential = config.retryBaseSeconds * 2 ** Math.max(0, attempt - 1);
   const capped = Math.min(exponential, config.retryMaxSeconds);
@@ -215,7 +246,7 @@ export async function dialOneLead(): Promise<{ dispatched: boolean; message: str
     return { dispatched: true, message: `Created Vapi call ${result.id} for ${lead.phone}` };
   } catch (error) {
     if (error instanceof HttpError) {
-      const retryable = shouldRetry(error.status);
+      const retryable = shouldRetryHttpError(error);
       await markFailure(lead.id, `${error.message}: ${error.body}`.slice(0, 600), retryable);
       runtimeError("worker", `HTTP call create failed (retryable=${retryable})`, error, {
         leadId: lead.id,
