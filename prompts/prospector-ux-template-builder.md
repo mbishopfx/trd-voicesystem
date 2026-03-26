@@ -17,6 +17,7 @@ IMPORTANT:
 - Hero copy must be clean, finished marketing copy, never planning notes.
 - Never output raw markdown tokens like `**`, checklist fragments, or "Goal:/Summary:" planning text.
 - Use a concise, relevant hero micro-label/tagline tied to industry + market.
+- The hero line directly under `<h1>` must be exactly one punch tagline of 5-6 words.
 
 GLOBAL STYLE DIRECTION:
 - Premium editorial luxury aesthetic

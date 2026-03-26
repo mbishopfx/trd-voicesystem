@@ -420,6 +420,7 @@ export async function syncProspectorContactToGhl(input: ProspectorGhlSyncInput):
     `Prospector Lead: ${input.lead.company || input.lead.id}`,
     `Market: ${input.lead.prospectCity || ""}, ${input.lead.prospectState || ""}`,
     `ICP: ${input.lead.prospectIcp || ""}`,
+    `Live Link: ${input.deployedSiteUrl || "(not deployed yet)"}`,
     `Deploy Link: ${input.deployedSiteUrl || "(not deployed yet)"}`,
     `Generated File: ${input.generatedSitePath || input.lead.generatedSitePath || ""}`,
     `Findings: ${input.lead.findings || ""}`,

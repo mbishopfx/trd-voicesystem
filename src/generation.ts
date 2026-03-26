@@ -160,6 +160,16 @@ function buildHeroTagline(lead: Lead, industry: string): string {
   return `Trusted ${industry} Partner`;
 }
 
+function buildPunchTagline(lead: Lead): string {
+  const root = inferIndustry(lead).split(/\s+/).filter(Boolean)[0] || "Business";
+  return `${root} authority that drives better leads`;
+}
+
+function enforcePunchTaglineUnderTitle(html: string, lead: Lead): string {
+  const tagline = escapeHtml(buildPunchTagline(lead));
+  return html.replace(/(<h1\b[^>]*>[\s\S]*?<\/h1>\s*<p\b[^>]*>)([\s\S]*?)(<\/p>)/i, `$1${tagline}$3`);
+}
+
 function hasRawPlanningCopy(html: string): boolean {
   const normalized = html.toLowerCase();
   return (
@@ -176,12 +186,9 @@ function renderFallbackTemplate(lead: Lead): string {
   const city = escapeHtml(lead.prospectCity || "Local City");
   const state = escapeHtml(lead.prospectState || "");
   const industryRaw = inferIndustry(lead);
-  const summarySource =
-    cleanProspectSummary(toText(lead.prospectSummary)) ||
-    `${toText(lead.company) || "This business"} is positioned to strengthen authority, trust, and qualified lead flow with a premium digital experience.`;
-  const summary = escapeHtml(summarySource);
   const industry = escapeHtml(industryRaw);
   const heroTagline = escapeHtml(buildHeroTagline(lead, industryRaw));
+  const punchTagline = escapeHtml(buildPunchTagline(lead));
   const [serviceA, serviceB, serviceC] = serviceCards(lead).map(escapeHtml) as [string, string, string];
   const marketLabel = [city, state].filter(Boolean).join(", ") || "Local Market";
 
@@ -251,7 +258,7 @@ function renderFallbackTemplate(lead: Lead): string {
     <div class="relative z-10 max-w-5xl mx-auto px-8 text-center">
       <span class="font-label text-[12px] uppercase tracking-[0.3em] text-primary mb-6 block font-medium">${heroTagline}</span>
       <h1 class="text-6xl md:text-8xl font-headline text-on-surface leading-[1.1] mb-8 tracking-tight">Elevating <span class="italic font-normal">${industry}</span> Authority</h1>
-      <p class="max-w-2xl mx-auto text-lg text-outline font-body leading-relaxed mb-12">${summary}</p>
+      <p class="max-w-2xl mx-auto text-lg text-outline font-body leading-relaxed mb-12">${punchTagline}</p>
       <div class="flex flex-col md:flex-row items-center justify-center gap-6">
         <a href="#cta" class="bg-primary text-on-primary px-10 py-4 rounded-md font-label text-xs uppercase tracking-[0.2em] hover:bg-primary-container transition-all duration-300 min-w-[200px]">Reserve Strategy Session</a>
         <a href="#services" class="text-primary border-b border-primary-container hover:border-primary transition-all font-label text-xs uppercase tracking-[0.2em] py-2">View Services</a>
@@ -453,14 +460,15 @@ async function generateProspectorHomepageHtml(lead: Lead): Promise<{
       const raw = await requestGeminiHtml(fullPrompt, model);
       if (raw) {
         const sanitized = sanitizeImageSources(raw);
-        if (hasRawPlanningCopy(sanitized.html)) {
+        const cleaned = enforcePunchTaglineUnderTitle(sanitized.html, lead);
+        if (hasRawPlanningCopy(cleaned)) {
           runtimeInfo("agent", "prospector gemini html rejected for planning/raw copy", {
             leadId: lead.id,
             model
           });
           continue;
         }
-        if (!hasStrongStructure(sanitized.html)) {
+        if (!hasStrongStructure(cleaned)) {
           runtimeInfo("agent", "prospector gemini html rejected for weak structure", {
             leadId: lead.id,
             model,
@@ -468,7 +476,7 @@ async function generateProspectorHomepageHtml(lead: Lead): Promise<{
           });
           continue;
         }
-        return { html: sanitized.html, source: "gemini", model, promptVersion };
+        return { html: cleaned, source: "gemini", model, promptVersion };
       }
     } catch (error) {
       runtimeError("agent", "prospector gemini generation failed", error, {
