@@ -90,6 +90,7 @@ function ensureHtmlDocument(raw: string): string | undefined {
 }
 
 const RELIABLE_PREMIUM_IMAGES = [
+  "https://images.unsplash.com/photo-1613490495763-547a569e4a02?ixlib=rb-4.0.3&auto=format&fit=crop&w=2940&q=80",
   "https://images.unsplash.com/photo-1460353581641-37baddab0fa2?auto=format&fit=crop&w=2200&q=80",
   "https://images.unsplash.com/photo-1441986300917-64674bd600d8?auto=format&fit=crop&w=1800&q=80",
   "https://images.unsplash.com/photo-1519710164239-da123dc03ef4?auto=format&fit=crop&w=1200&q=80",
@@ -99,6 +100,11 @@ const RELIABLE_PREMIUM_IMAGES = [
   "https://images.unsplash.com/photo-1497215842964-222b430dc094?auto=format&fit=crop&w=1200&q=80",
   "https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=1200&q=80"
 ];
+const EMERGENCY_IMAGE_DATA_URI =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNjAwIiBoZWlnaHQ9IjkwMCIgdmlld0JveD0iMCAwIDE2MDAgOTAwIj48ZGVmcz48bGluZWFyR3JhZGllbnQgaWQ9ImciIHgxPSIwIiB5MT0iMCIgeDI9IjEiIHkyPSIxIj48c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjZWFlNmRlIi8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjY2RjNmI4Ii8+PC9saW5lYXJHcmFkaWVudD48L2RlZnM+PHJlY3Qgd2lkdGg9IjE2MDAiIGhlaWdodD0iOTAwIiBmaWxsPSJ1cmwoI2cpIi8+PC9zdmc+";
+
+const imageReachabilityCache = new Map<string, boolean>();
+let verifiedFallbackPoolPromise: Promise<string[]> | undefined;
 
 function isBadImageSource(src: string): boolean {
   const value = src.trim().toLowerCase();
@@ -112,19 +118,113 @@ function isBadImageSource(src: string): boolean {
   return true;
 }
 
-function sanitizeImageSources(html: string): { html: string; replaced: number } {
-  let idx = 0;
-  let replaced = 0;
-  const sanitized = html.replace(/(<img\b[^>]*?\bsrc\s*=\s*)(["'])([^"']*)(\2)/gi, (_match, prefix, quote, src) => {
-    if (!isBadImageSource(String(src || ""))) {
-      return `${prefix}${quote}${src}${quote}`;
+function hasImageLikeExtension(url: string): boolean {
+  const lowered = url.toLowerCase();
+  return [".jpg", ".jpeg", ".png", ".webp", ".avif", ".gif"].some((ext) => lowered.includes(ext));
+}
+
+function looksLikeImageContentType(value: string | null): boolean {
+  if (!value) return false;
+  return value.toLowerCase().includes("image/");
+}
+
+async function isReachableImageUrl(url: string): Promise<boolean> {
+  const normalized = url.trim();
+  if (!normalized) return false;
+  if (normalized.startsWith("data:")) return true;
+  if (!(normalized.startsWith("http://") || normalized.startsWith("https://"))) return false;
+
+  const cached = imageReachabilityCache.get(normalized);
+  if (cached !== undefined) return cached;
+
+  const headers = {
+    Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+    "User-Agent":
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+  };
+
+  const checkWith = async (method: "HEAD" | "GET"): Promise<boolean> => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 7000);
+    try {
+      const response = await fetch(normalized, {
+        method,
+        headers,
+        redirect: "follow",
+        signal: controller.signal
+      });
+      if (!response.ok && response.status !== 206) return false;
+      const contentType = response.headers.get("content-type");
+      if (looksLikeImageContentType(contentType)) return true;
+      if (!contentType && hasImageLikeExtension(normalized)) return true;
+      return false;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeout);
     }
-    const replacement = RELIABLE_PREMIUM_IMAGES[idx % RELIABLE_PREMIUM_IMAGES.length];
-    idx += 1;
-    replaced += 1;
-    return `${prefix}${quote}${replacement}${quote}`;
-  });
-  return { html: sanitized, replaced };
+  };
+
+  const headOk = await checkWith("HEAD");
+  if (headOk) {
+    imageReachabilityCache.set(normalized, true);
+    return true;
+  }
+
+  const getOk = await checkWith("GET");
+  imageReachabilityCache.set(normalized, getOk);
+  return getOk;
+}
+
+async function verifiedFallbackPool(): Promise<string[]> {
+  if (verifiedFallbackPoolPromise) return verifiedFallbackPoolPromise;
+  verifiedFallbackPoolPromise = (async () => {
+    const checks = await Promise.all(
+      RELIABLE_PREMIUM_IMAGES.map(async (url) => ((await isReachableImageUrl(url)) ? url : ""))
+    );
+    const good = checks.filter(Boolean);
+    return good.length ? good : [EMERGENCY_IMAGE_DATA_URI];
+  })();
+  return verifiedFallbackPoolPromise;
+}
+
+async function sanitizeImageSources(html: string): Promise<{ html: string; replaced: number }> {
+  const regex = /(<img\b[^>]*?\bsrc\s*=\s*)(["'])([^"']*)(\2)/gi;
+  const matches = Array.from(html.matchAll(regex));
+  if (matches.length === 0) return { html, replaced: 0 };
+
+  const fallbackPool = await verifiedFallbackPool();
+  let replacementIdx = 0;
+  let replaced = 0;
+  let cursor = 0;
+  let out = "";
+
+  for (const match of matches) {
+    const fullMatch = match[0] || "";
+    const prefix = match[1] || "";
+    const quote = match[2] || '"';
+    const src = String(match[3] || "");
+    const start = match.index ?? -1;
+    if (start < 0) continue;
+    const end = start + fullMatch.length;
+    out += html.slice(cursor, start);
+
+    const badByPattern = isBadImageSource(src);
+    const reachable = badByPattern ? false : await isReachableImageUrl(src);
+    if (!badByPattern && reachable) {
+      out += fullMatch;
+    } else {
+      const replacement = fallbackPool[replacementIdx % fallbackPool.length];
+      replacementIdx += 1;
+      replaced += 1;
+      out += `${prefix}${quote}${replacement}${quote}`;
+    }
+
+    cursor = end;
+  }
+
+  out += html.slice(cursor);
+  return { html: out, replaced };
 }
 
 function hasStrongStructure(html: string): boolean {
@@ -447,7 +547,9 @@ async function generateProspectorHomepageHtml(lead: Lead): Promise<{
 }> {
   const promptVersion = hashShort(await loadProspectorPrompt());
   if (!config.geminiApiKey) {
-    return { html: renderFallbackTemplate(lead), source: "fallback", promptVersion };
+    const fallback = renderFallbackTemplate(lead);
+    const sanitized = await sanitizeImageSources(fallback);
+    return { html: sanitized.html, source: "fallback", promptVersion };
   }
 
   const basePrompt = await loadProspectorPrompt();
@@ -459,8 +561,9 @@ async function generateProspectorHomepageHtml(lead: Lead): Promise<{
     try {
       const raw = await requestGeminiHtml(fullPrompt, model);
       if (raw) {
-        const sanitized = sanitizeImageSources(raw);
-        const cleaned = enforcePunchTaglineUnderTitle(sanitized.html, lead);
+        const withTagline = enforcePunchTaglineUnderTitle(raw, lead);
+        const sanitized = await sanitizeImageSources(withTagline);
+        const cleaned = sanitized.html;
         if (hasRawPlanningCopy(cleaned)) {
           runtimeInfo("agent", "prospector gemini html rejected for planning/raw copy", {
             leadId: lead.id,
@@ -486,7 +589,9 @@ async function generateProspectorHomepageHtml(lead: Lead): Promise<{
     }
   }
 
-  return { html: renderFallbackTemplate(lead), source: "fallback", promptVersion };
+  const fallback = renderFallbackTemplate(lead);
+  const sanitized = await sanitizeImageSources(fallback);
+  return { html: sanitized.html, source: "fallback", promptVersion };
 }
 
 export async function generateReadyProspectSites(
