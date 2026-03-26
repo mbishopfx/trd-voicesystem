@@ -2377,6 +2377,38 @@ export function createServer() {
     res.json({ ok: true, count: leads.length, leads });
   });
 
+  app.get("/api/prospector/site/:leadId", async (req: Request, res: Response) => {
+    const leadId = safeString(req.params.leadId);
+    if (!leadId) {
+      res.status(400).send("Missing leadId");
+      return;
+    }
+
+    const lead = await withState((state) => {
+      const row = state.leads[leadId];
+      if (!row || row.sourceFile !== "prospector-dashboard") return undefined;
+      return { ...row };
+    });
+    if (!lead?.generatedSitePath) {
+      res.status(404).send("Prospector site not found");
+      return;
+    }
+
+    const resolvedPath = path.resolve(lead.generatedSitePath);
+    const allowedRoot = path.resolve(config.generatedSitesDir) + path.sep;
+    if (!resolvedPath.startsWith(allowedRoot)) {
+      res.status(403).send("Prospector site path is outside allowed directory");
+      return;
+    }
+
+    try {
+      const html = await fs.readFile(resolvedPath, "utf8");
+      res.type("html").send(html);
+    } catch {
+      res.status(404).send("Prospector site file not found");
+    }
+  });
+
   app.post("/api/prospector/generate-sites", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
     const limit = asOptionalInt(body.limit, 1, 100) || 10;

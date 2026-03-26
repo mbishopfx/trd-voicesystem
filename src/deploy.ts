@@ -12,6 +12,34 @@ function safeSlug(value: string): string {
   return String(value || 'prospect-site').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/-{2,}/g, '-').replace(/(^-|-$)/g, '').slice(0, 80) || 'prospect-site';
 }
 
+function normalizePublicBaseUrl(value: string | undefined): string | undefined {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return undefined;
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  return withProtocol.replace(/\/+$/, '');
+}
+
+function resolvePublicBaseUrl(): string | undefined {
+  const candidates = [
+    process.env.PROSPECTOR_HOSTED_BASE_URL,
+    process.env.PUBLIC_BASE_URL,
+    process.env.RAILWAY_STATIC_URL,
+    process.env.RAILWAY_PUBLIC_DOMAIN,
+    process.env.RAILWAY_SERVICE_OUTBOUND_VOICE_BOT_URL
+  ];
+  for (const value of candidates) {
+    const normalized = normalizePublicBaseUrl(value);
+    if (normalized) return normalized;
+  }
+  return undefined;
+}
+
+function buildHostedPreviewUrl(leadId: string): string | undefined {
+  const base = resolvePublicBaseUrl();
+  if (!base) return undefined;
+  return `${base}/api/prospector/site/${encodeURIComponent(leadId)}`;
+}
+
 async function deployStaticFile(htmlPath: string, deployName?: string): Promise<string> {
   const source = path.resolve(htmlPath);
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'trd-prospect-'));
@@ -35,9 +63,9 @@ export async function deployGeneratedProspects(
       .slice(0, limit);
 
     for (const lead of ready) {
+      const deployInputPath = lead.generatedSitePath!;
+      const preferredName = safeSlug(lead.prospectDeployName || path.basename(deployInputPath, path.extname(deployInputPath)));
       try {
-        const deployInputPath = lead.generatedSitePath!;
-        const preferredName = safeSlug(lead.prospectDeployName || path.basename(deployInputPath, path.extname(deployInputPath)));
         const url = await deployStaticFile(deployInputPath, preferredName);
         lead.deployedSiteUrl = url;
         lead.generationStatus = 'deployed';
@@ -54,6 +82,24 @@ export async function deployGeneratedProspects(
         });
       } catch (error) {
         const message = String(error).slice(0, 500);
+        const fallbackUrl = buildHostedPreviewUrl(lead.id);
+        if (fallbackUrl) {
+          lead.deployedSiteUrl = fallbackUrl;
+          lead.generationStatus = 'deployed';
+          lead.prospectorPhase = 2;
+          lead.prospectorPhaseStatus = 'phase2_deployed_fallback';
+          lead.prospectDeployName = preferredName;
+          lead.lastError = message;
+          lead.updatedAt = new Date().toISOString();
+          done.push(lead.id);
+          runtimeInfo('agent', 'prospector deploy fallback link assigned', {
+            leadId: lead.id,
+            deployedSiteUrl: fallbackUrl,
+            reason: message
+          });
+          continue;
+        }
+
         lead.prospectorPhase = 2;
         lead.prospectorPhaseStatus = 'phase2_deploy_error';
         lead.lastError = message;
