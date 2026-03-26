@@ -133,17 +133,55 @@ function hasStrongStructure(html: string): boolean {
   return imgCount >= 5 && sectionCount >= 6;
 }
 
+function cleanText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function cleanProspectSummary(raw: string): string {
+  let value = raw || "";
+  value = value.replace(/\*\*/g, "");
+  value = value.replace(/^#+\s*/gm, "");
+  value = value.replace(/\bHomepage Planning Summary\b:?/gi, "");
+  value = value.replace(/\bGoal\b\s*:\s*/gi, "");
+  value = value.replace(/\bObjective\b\s*:\s*/gi, "");
+  value = value.replace(/\bSummary\b\s*:\s*/gi, "");
+  value = value.replace(/\bThe homepage will serve[^.]*\.?/gi, "");
+  value = cleanText(value);
+  if (!value) return "";
+  if (value.length > 240) value = `${value.slice(0, 237).trim()}...`;
+  return value;
+}
+
+function buildHeroTagline(lead: Lead, industry: string): string {
+  const city = toText(lead.prospectCity);
+  const state = toText(lead.prospectState);
+  const market = [city, state].filter(Boolean).join(", ");
+  if (market) return `Trusted ${industry} in ${market}`;
+  return `Trusted ${industry} Partner`;
+}
+
+function hasRawPlanningCopy(html: string): boolean {
+  const normalized = html.toLowerCase();
+  return (
+    normalized.includes("homepage planning summary") ||
+    normalized.includes("goal: to establish a strong online presence") ||
+    normalized.includes("the homepage will serve as the primary entry point") ||
+    normalized.includes("**goal:**") ||
+    normalized.includes("**")
+  );
+}
+
 function renderFallbackTemplate(lead: Lead): string {
   const title = escapeHtml(lead.company || "Business Name");
   const city = escapeHtml(lead.prospectCity || "Local City");
   const state = escapeHtml(lead.prospectState || "");
-  const summary = escapeHtml(
-    (
-    lead.prospectSummary ||
-    "A premium local brand presence crafted to position your business as the trusted source in your market."
-  ).slice(0, 320)
-  );
-  const industry = escapeHtml(inferIndustry(lead));
+  const industryRaw = inferIndustry(lead);
+  const summarySource =
+    cleanProspectSummary(toText(lead.prospectSummary)) ||
+    `${toText(lead.company) || "This business"} is positioned to strengthen authority, trust, and qualified lead flow with a premium digital experience.`;
+  const summary = escapeHtml(summarySource);
+  const industry = escapeHtml(industryRaw);
+  const heroTagline = escapeHtml(buildHeroTagline(lead, industryRaw));
   const [serviceA, serviceB, serviceC] = serviceCards(lead).map(escapeHtml) as [string, string, string];
   const marketLabel = [city, state].filter(Boolean).join(", ") || "Local Market";
 
@@ -211,7 +249,7 @@ function renderFallbackTemplate(lead: Lead): string {
       <img class="w-full h-full object-cover opacity-60 grayscale-[20%]" data-alt="premium editorial brand environment" src="${RELIABLE_PREMIUM_IMAGES[0]}" alt="${industry} hero atmosphere"/>
     </div>
     <div class="relative z-10 max-w-5xl mx-auto px-8 text-center">
-      <span class="font-label text-[12px] uppercase tracking-[0.3em] text-primary mb-6 block font-medium">${marketLabel}</span>
+      <span class="font-label text-[12px] uppercase tracking-[0.3em] text-primary mb-6 block font-medium">${heroTagline}</span>
       <h1 class="text-6xl md:text-8xl font-headline text-on-surface leading-[1.1] mb-8 tracking-tight">Elevating <span class="italic font-normal">${industry}</span> Authority</h1>
       <p class="max-w-2xl mx-auto text-lg text-outline font-body leading-relaxed mb-12">${summary}</p>
       <div class="flex flex-col md:flex-row items-center justify-center gap-6">
@@ -415,6 +453,13 @@ async function generateProspectorHomepageHtml(lead: Lead): Promise<{
       const raw = await requestGeminiHtml(fullPrompt, model);
       if (raw) {
         const sanitized = sanitizeImageSources(raw);
+        if (hasRawPlanningCopy(sanitized.html)) {
+          runtimeInfo("agent", "prospector gemini html rejected for planning/raw copy", {
+            leadId: lead.id,
+            model
+          });
+          continue;
+        }
         if (!hasStrongStructure(sanitized.html)) {
           runtimeInfo("agent", "prospector gemini html rejected for weak structure", {
             leadId: lead.id,

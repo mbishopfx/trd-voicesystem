@@ -14,6 +14,9 @@ IMPORTANT:
 - Include Material Symbols Outlined for icons.
 - Preserve the overall layout hierarchy, spacing rhythm, and visual tone of the reference.
 - Keep the page visually luxurious, calm, and conversion-focused.
+- Hero copy must be clean, finished marketing copy, never planning notes.
+- Never output raw markdown tokens like `**`, checklist fragments, or "Goal:/Summary:" planning text.
+- Use a concise, relevant hero micro-label/tagline tied to industry + market.
 
 GLOBAL STYLE DIRECTION:
 - Premium editorial luxury aesthetic
@@ -79,6 +82,7 @@ CONTENT ADAPTATION RULES:
 - Never mention med spa language unless explicitly requested
 - Never keep reference-brand wording from the example
 - Make all headlines, buttons, section titles, and testimonials match the provided business context
+- Hero subheadline must be a polished 1-2 sentence brand statement, not internal strategy language.
 
 IMAGE RULES:
 - Use high-end descriptive placeholder image URLs if needed
