@@ -44,6 +44,19 @@ DESIGN RULES:
 - Feature/value sections should use iconography and elegant grid layouts
 - Footer should be structured, clean, and premium
 
+STRUCTURE LOCK (NON-NEGOTIABLE):
+- Keep this exact section order and rhythm:
+  1) fixed nav
+  2) cinematic hero with micro-label + large serif headline + 2 CTAs
+  3) 3 featured cards (middle card vertically staggered on desktop)
+  4) two-column "experience" block with rotated image card and numbered points
+  5) three testimonial cards with refined editorial spacing
+  6) philosophy/value strip with icon grid on contrasting background
+  7) high-contrast final CTA block with dual buttons
+  8) multi-column structured footer with brand, nav, connect, contact
+- Maintain large vertical spacing and asymmetry where relevant.
+- Do not collapse this into generic stacked "marketing sections."
+
 PAGE STRUCTURE TO FOLLOW:
 1. Fixed top navigation
 2. Large hero section
@@ -72,6 +85,10 @@ IMAGE RULES:
 - Every image should match the business context
 - Add descriptive data-alt text for every image
 - Images should feel editorial, atmospheric, premium, and brand-aligned
+- Never use `https://source.unsplash.com/random` or any `source.unsplash.com/*` URLs.
+- Use only stable direct image URLs (for example `https://images.unsplash.com/photo-...?...` or equivalent static CDN URLs).
+- Include at least 6 images across hero/cards/experience sections.
+- Ensure each `<img>` has a valid `src` and `alt`; no empty or broken image links.
 
 TYPOGRAPHY RULES:
 - Headlines: Noto Serif
