@@ -6,9 +6,11 @@ import { nowIso, randomInt } from "./utils.js";
 import { createOutboundCall, HttpError } from "./vapiClient.js";
 import { syncLeadToGhl } from "./integrations/ghl.js";
 import { runtimeError, runtimeInfo } from "./runtimeLogs.js";
+import { getVapiCreditGuardStatus } from "./vapiCredits.js";
 
 const ACTIVE_QUEUE: LeadStatus[] = ["queued", "retry"];
 let dialerCooldownUntil = 0;
+let lastCreditGuardLogKey = "";
 
 export function setDialerPostCallCooldown(delayMs: number): void {
   const ms = Math.max(0, Math.trunc(delayMs));
@@ -129,6 +131,36 @@ function isEligible(lead: Lead, now: Date): boolean {
 }
 
 async function reserveLead(): Promise<Lead | undefined> {
+  const creditStatus = await getVapiCreditGuardStatus();
+  const creditLogKey = `${creditStatus.stopDialing}|${creditStatus.fetchOk}|${creditStatus.availableCredits ?? "na"}|${creditStatus.reason}`;
+  if (creditLogKey !== lastCreditGuardLogKey) {
+    lastCreditGuardLogKey = creditLogKey;
+    if (creditStatus.stopDialing) {
+      runtimeInfo("dialer", "dialer paused due low Vapi credits", {
+        availableCredits: creditStatus.availableCredits,
+        minCredits: creditStatus.minCredits,
+        checkedAt: creditStatus.checkedAt,
+        sourceEndpoint: creditStatus.sourceEndpoint || ""
+      });
+    } else if (!creditStatus.fetchOk) {
+      runtimeInfo("dialer", "Vapi credit check unavailable; continuing dialer", {
+        reason: creditStatus.reason,
+        checkedAt: creditStatus.checkedAt
+      });
+    } else {
+      runtimeInfo("dialer", "Vapi credit guard check passed", {
+        availableCredits: creditStatus.availableCredits,
+        minCredits: creditStatus.minCredits,
+        checkedAt: creditStatus.checkedAt,
+        sourceEndpoint: creditStatus.sourceEndpoint || ""
+      });
+    }
+  }
+
+  if (creditStatus.stopDialing) {
+    return undefined;
+  }
+
   if (Date.now() < dialerCooldownUntil) {
     return undefined;
   }

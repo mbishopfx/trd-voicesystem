@@ -94,6 +94,7 @@ import {
   setBulkCampaignSchedulerEnabled,
   updateBulkCampaignSchedulerSettings
 } from "./bulkCampaignScheduler.js";
+import { getVapiCreditGuardStatus } from "./vapiCredits.js";
 
 type RawBodyRequest = Request & { rawBody?: string };
 let reconcileLoopStarted = false;
@@ -2036,6 +2037,9 @@ export function createServer() {
       defaults: {
         hasEnvApiKey: Boolean(config.vapiApiKey),
         hasEnvPublicKey: Boolean(config.vapiPublicKey),
+        vapiCreditGuardEnabled: config.vapiCreditGuardEnabled,
+        vapiMinCreditsToDial: config.vapiMinCreditsToDial,
+        vapiCreditCheckIntervalSeconds: config.vapiCreditCheckIntervalSeconds,
         hasEnvPhoneNumberId: Boolean(config.vapiPhoneNumberId),
         hasEnvAssistantId: Boolean(config.vapiAssistantId),
         hasEnvInboundAssistantId: Boolean(config.vapiInboundAssistantId),
@@ -2077,6 +2081,7 @@ export function createServer() {
   app.get("/api/dialer/status", async (_req: Request, res: Response) => {
     const now = Date.now();
     const leads = await withState((state) => Object.values(state.leads).map((lead) => ({ ...lead })));
+    const vapiCreditGuard = await getVapiCreditGuardStatus();
     const queue = summarizeLeadQueue(leads);
     const dueNow = leads.filter((lead) => {
       if (!(lead.status === "queued" || lead.status === "retry")) return false;
@@ -2097,7 +2102,8 @@ export function createServer() {
         trustAllImports: config.trustAllImports,
         reconcileIntervalSeconds: config.reconcileIntervalSeconds,
         reconcileMinAgeSeconds: config.reconcileMinAgeSeconds,
-        cooldownRemainingMs: getDialerCooldownRemainingMs()
+        cooldownRemainingMs: getDialerCooldownRemainingMs(),
+        vapiCreditGuard
       },
       throttles: {
         effectiveCps: effectiveCps(),
