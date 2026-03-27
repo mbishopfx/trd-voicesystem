@@ -4200,10 +4200,12 @@ export function createServer() {
     lead.notes = `Manual dashboard call. Topic=${customMessage}. PromptProvider=${generated.provider}`;
     lead.sourceFile = "manual-dashboard";
     lead.campaign = `${brandName} Manual Outreach (${voiceProfile})`;
-    lead.status = "queued";
-    lead.attempts = 0;
-    lead.callAttemptedAt = undefined;
-    lead.lastAttemptAt = undefined;
+    // Pre-lock manual call leads so the background dialer cannot race and place a duplicate call.
+    const manualAttemptAt = nowIso();
+    lead.status = "dialing";
+    lead.attempts = 1;
+    lead.callAttemptedAt = manualAttemptAt;
+    lead.lastAttemptAt = manualAttemptAt;
     lead.callId = undefined;
     lead.lastError = undefined;
     lead.outcome = undefined;
