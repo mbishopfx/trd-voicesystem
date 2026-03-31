@@ -3253,6 +3253,55 @@ export function createServer() {
       lastActivityAt?: string;
     };
 
+    type SmsHistoryRow = {
+      sid?: string;
+      status?: string;
+      to?: string;
+      from?: string;
+      body?: string;
+      direction?: string;
+      dateCreated?: string;
+      dateSent?: string;
+      dateUpdated?: string;
+      errorCode?: string;
+      errorMessage?: string;
+    };
+
+    const smsByPhone = new Map<string, SmsHistoryRow>();
+    let smsHistory: SmsHistoryRow[] = [];
+    if (isTwilioSmsConfigured()) {
+      try {
+        const messages = await listTwilioMessages({ pageSize: 100 });
+        smsHistory = messages
+          .map((msg) => ({
+            sid: msg.sid,
+            status: msg.status,
+            to: msg.to,
+            from: msg.from,
+            body: msg.body,
+            direction: msg.direction,
+            dateCreated: msg.dateCreated,
+            dateSent: msg.dateSent,
+            dateUpdated: msg.dateUpdated,
+            errorCode: msg.errorCode,
+            errorMessage: msg.errorMessage
+          }))
+          .sort((a, b) => {
+            const aTs = Date.parse(a.dateSent || a.dateCreated || a.dateUpdated || "");
+            const bTs = Date.parse(b.dateSent || b.dateCreated || b.dateUpdated || "");
+            return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
+          });
+
+        for (const row of smsHistory) {
+          const normalized = normalizePhone(row.to || "");
+          if (!normalized || smsByPhone.has(normalized)) continue;
+          smsByPhone.set(normalized, row);
+        }
+      } catch (error) {
+        runtimeError("twilio", "analytics sms history fetch failed", error);
+      }
+    }
+
     const emptyAssistantRow = (assistantId: string): AssistantRow => ({
       assistantId,
       total: 0,
@@ -3275,6 +3324,18 @@ export function createServer() {
           safeString(lead.prospectorCallAssistantId) ||
           safeString(config.vapiAssistantId) ||
           "unknown";
+        const normalizedPhone = normalizePhone(lead.phone || "");
+        const smsRecord = normalizedPhone ? smsByPhone.get(normalizedPhone) : undefined;
+        const smsSent = Boolean(
+          lead.smsLastSid ||
+            lead.smsLastSentAt ||
+            lead.winSmsSentAt ||
+            lead.voicemailSmsSentAt ||
+            smsRecord?.sid ||
+            smsRecord?.dateSent ||
+            smsRecord?.dateCreated
+        );
+        const called = Boolean(lead.callId || lead.callAttemptedAt || (lead.attempts || 0) > 0);
         return {
           assistantId,
           leadId: lead.id,
@@ -3285,7 +3346,9 @@ export function createServer() {
           hasTranscript: Boolean(lead.transcript),
           transcriptSummary: lead.transcriptSummary || (lead.transcript ? lead.transcript.slice(0, 220) : undefined),
           callId: lead.callId,
-          updatedAt: lead.updatedAt
+          updatedAt: lead.updatedAt,
+          smsSent,
+          calledAndSmsComplete: called && smsSent
         };
       })
       .sort((a, b) => {
@@ -3340,6 +3403,7 @@ export function createServer() {
         source: "state",
         assistants: assistantsFromLeads,
         recent: recentFromLeads,
+        smsHistory: smsHistory.slice(0, 100),
         fetchedAt: nowIso()
       });
       return;
@@ -3376,6 +3440,9 @@ export function createServer() {
           safeString(call.startedAt) ||
           safeString(call.createdAt) ||
           nowIso();
+        const normalizedPhone = normalizePhone(customer?.number || "");
+        const smsRecord = normalizedPhone ? smsByPhone.get(normalizedPhone) : undefined;
+        const smsSent = Boolean(smsRecord?.sid || smsRecord?.dateSent || smsRecord?.dateCreated);
         return {
           assistantId,
           leadId: safeString(metadata?.leadId) || safeString(call.id) || "",
@@ -3386,7 +3453,9 @@ export function createServer() {
           hasTranscript: Boolean(transcript),
           transcriptSummary: transcript ? transcript.slice(0, 220) : undefined,
           callId: safeString(call.id),
-          updatedAt
+          updatedAt,
+          smsSent,
+          calledAndSmsComplete: Boolean(safeString(call.id)) && smsSent
         };
       })
       .sort((a, b) => {
@@ -3423,6 +3492,7 @@ export function createServer() {
       source: "vapi",
       assistants: assistantsFromVapi,
       recent: recentFromVapi,
+      smsHistory: smsHistory.slice(0, 100),
       fetchedAt: nowIso()
     });
   });

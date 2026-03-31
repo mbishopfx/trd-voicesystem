@@ -886,10 +886,30 @@
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Lead</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Transcript</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">SMS Sent</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Called + SMS</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Updated</th>
                   </tr>
                 </thead>
                 <tbody id="analyticsRecentRows" class="divide-y divide-outline-variant/10"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <h3 class="font-headline text-lg font-extrabold text-on-surface">Twilio SMS History</h3>
+            <div class="mt-4 overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-surface-container-low/40">
+                  <tr>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">SID</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">To</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Direction</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Sent</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Body</th>
+                  </tr>
+                </thead>
+                <tbody id="analyticsSmsRows" class="divide-y divide-outline-variant/10"></tbody>
               </table>
             </div>
           </section>
@@ -1740,6 +1760,7 @@
         const retarget = retargetResp.summary || {};
         const assistants = assistantResp.assistants || [];
         const recent = assistantResp.recent || [];
+        const smsHistory = assistantResp.smsHistory || [];
 
         setText("analyticsBookingRate", `${rates.bookingRate || 0}%`);
         setText("analyticsCompletionRate", `${rates.completionRate || 0}%`);
@@ -1788,20 +1809,47 @@
                   const leadLabel = row.company || row.phone || row.leadId || "--";
                   const status = [row.status, row.outcome].filter(Boolean).join(" / ") || "--";
                   const updatedAt = row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "--";
+                  const smsSent = row.smsSent ? "Yes" : "No";
+                  const completion = row.calledAndSmsComplete ? "Complete" : "Pending";
                   return `<tr>
                     <td class="px-4 py-3 text-xs">${escapeHtml(row.assistantId || "--")}</td>
                     <td class="px-4 py-3">${escapeHtml(leadLabel)}</td>
                     <td class="px-4 py-3">${escapeHtml(status)}</td>
                     <td class="px-4 py-3">${row.hasTranscript ? "Available" : "Missing"}</td>
+                    <td class="px-4 py-3">${escapeHtml(smsSent)}</td>
+                    <td class="px-4 py-3">${escapeHtml(completion)}</td>
                     <td class="px-4 py-3 text-xs">${escapeHtml(updatedAt)}</td>
                   </tr>`;
                 })
                 .join("")
-            : `<tr><td colspan="5" class="px-4 py-4 text-sm text-outline">No recent logs yet.</td></tr>`;
+            : `<tr><td colspan="7" class="px-4 py-4 text-sm text-outline">No recent logs yet.</td></tr>`;
+        }
+
+        const smsRows = document.getElementById("analyticsSmsRows");
+        if (smsRows) {
+          smsRows.innerHTML = smsHistory.length
+            ? smsHistory
+                .map((row) => {
+                  const sentAt = row.dateSent || row.dateCreated || row.dateUpdated;
+                  const sent = sentAt ? new Date(sentAt).toLocaleString() : "--";
+                  const sid = row.sid || "--";
+                  const body = row.body || "";
+                  return `<tr>
+                    <td class="px-4 py-3 text-xs">${escapeHtml(sid)}</td>
+                    <td class="px-4 py-3">${escapeHtml(row.to || "--")}</td>
+                    <td class="px-4 py-3">${escapeHtml(row.status || "--")}</td>
+                    <td class="px-4 py-3">${escapeHtml(row.direction || "--")}</td>
+                    <td class="px-4 py-3 text-xs">${escapeHtml(sent)}</td>
+                    <td class="px-4 py-3 text-xs">${escapeHtml(body.slice(0, 180) || "--")}</td>
+                  </tr>`;
+                })
+                .join("")
+            : `<tr><td colspan="6" class="px-4 py-4 text-sm text-outline">No Twilio SMS history found.</td></tr>`;
         }
 
         const refreshedAt = assistantResp.fetchedAt ? new Date(assistantResp.fetchedAt).toLocaleTimeString() : new Date().toLocaleTimeString();
-        setText("analyticsLastRefreshed", `Refresh every 5m · Updated ${refreshedAt}`);
+        const sourceLabel = assistantResp.source ? ` · Source ${assistantResp.source}` : "";
+        setText("analyticsLastRefreshed", `Refresh every 5m · Updated ${refreshedAt}${sourceLabel}`);
       }
 
       async function refreshSettings() {
