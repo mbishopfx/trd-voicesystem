@@ -3176,6 +3176,116 @@ export function createServer() {
     res.json({ ok: true, summary });
   });
 
+  app.get("/api/analytics/assistants", async (req: Request, res: Response) => {
+    const limit = asOptionalInt(req.query.limit, 1, 2000) || 300;
+    const leads = await withState((state) => Object.values(state.leads).map((lead) => ({ ...lead })));
+
+    type AssistantRow = {
+      assistantId: string;
+      total: number;
+      attempted: number;
+      queued: number;
+      completed: number;
+      booked: number;
+      failed: number;
+      withTranscript: number;
+      withoutTranscript: number;
+      transcriptCoverage: number;
+      lastActivityAt?: string;
+    };
+
+    const map = new Map<string, AssistantRow>();
+    const recent = leads
+      .filter((lead) => Boolean(lead.callId || lead.callAttemptedAt || lead.outcome || lead.transcript || lead.recordingUrl))
+      .map((lead) => {
+        const assistantId =
+          safeString(lead.assistantIdOverride) ||
+          safeString(lead.prospectorCallAssistantId) ||
+          safeString(config.vapiAssistantId) ||
+          "unknown";
+        return {
+          assistantId,
+          leadId: lead.id,
+          company: lead.company,
+          phone: lead.phone,
+          status: lead.status,
+          outcome: lead.outcome,
+          hasTranscript: Boolean(lead.transcript),
+          transcriptSummary: lead.transcriptSummary || (lead.transcript ? lead.transcript.slice(0, 220) : undefined),
+          callId: lead.callId,
+          updatedAt: lead.updatedAt
+        };
+      })
+      .sort((a, b) => {
+        const assistantSort = a.assistantId.localeCompare(b.assistantId);
+        if (assistantSort !== 0) return assistantSort;
+        const aTs = Date.parse(a.updatedAt || "");
+        const bTs = Date.parse(b.updatedAt || "");
+        return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
+      })
+      .slice(0, limit);
+
+    for (const lead of leads) {
+      const assistantId =
+        safeString(lead.assistantIdOverride) ||
+        safeString(lead.prospectorCallAssistantId) ||
+        safeString(config.vapiAssistantId) ||
+        "unknown";
+      const row =
+        map.get(assistantId) ||
+        ({
+          assistantId,
+          total: 0,
+          attempted: 0,
+          queued: 0,
+          completed: 0,
+          booked: 0,
+          failed: 0,
+          withTranscript: 0,
+          withoutTranscript: 0,
+          transcriptCoverage: 0
+        } as AssistantRow);
+
+      row.total += 1;
+      if (lead.status === "queued" || lead.status === "retry" || lead.status === "dialing") row.queued += 1;
+      if (lead.status === "completed") row.completed += 1;
+      if (lead.status === "booked") row.booked += 1;
+      if (lead.status === "failed") row.failed += 1;
+
+      const attempted = (lead.attempts || 0) > 0 || Boolean(lead.callAttemptedAt) || Boolean(lead.callId);
+      if (attempted) {
+        row.attempted += 1;
+        if (lead.transcript) {
+          row.withTranscript += 1;
+        } else {
+          row.withoutTranscript += 1;
+        }
+      }
+
+      const ts = Date.parse(lead.updatedAt || lead.callAttemptedAt || "");
+      const existingTs = Date.parse(row.lastActivityAt || "");
+      if (Number.isFinite(ts) && (!Number.isFinite(existingTs) || ts > existingTs)) {
+        row.lastActivityAt = new Date(ts).toISOString();
+      }
+
+      map.set(assistantId, row);
+    }
+
+    const assistants = [...map.values()]
+      .map((row) => ({
+        ...row,
+        transcriptCoverage: row.attempted > 0 ? Math.round((row.withTranscript / row.attempted) * 10000) / 100 : 0
+      }))
+      .sort((a, b) => a.assistantId.localeCompare(b.assistantId));
+
+    res.json({
+      ok: true,
+      assistants,
+      recent,
+      fetchedAt: nowIso()
+    });
+  });
+
   app.get("/api/retarget/summary", async (_req: Request, res: Response) => {
     const leads = await withState((state) => Object.values(state.leads).map((lead) => ({ ...lead })));
     const summary = summarizeRetargetBuckets(leads);

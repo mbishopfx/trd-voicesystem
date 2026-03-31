@@ -854,6 +854,45 @@
               </div>
             </div>
           </section>
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="flex items-center justify-between">
+              <h3 class="font-headline text-lg font-extrabold text-on-surface">Assistant Analytics</h3>
+              <p id="analyticsLastRefreshed" class="text-xs text-outline">Refresh every 5m · Updated --</p>
+            </div>
+            <div class="mt-4 overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-surface-container-low/40">
+                  <tr>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Assistant ID</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Total</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Attempted</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Booked</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Transcript</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Coverage</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Last Activity</th>
+                  </tr>
+                </thead>
+                <tbody id="analyticsAssistantRows" class="divide-y divide-outline-variant/10"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <h3 class="font-headline text-lg font-extrabold text-on-surface">Recent Logs (By Assistant)</h3>
+            <div class="mt-4 overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-surface-container-low/40">
+                  <tr>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Assistant ID</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Lead</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Transcript</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="analyticsRecentRows" class="divide-y divide-outline-variant/10"></tbody>
+              </table>
+            </div>
+          </section>
         </section>
 
         <section id="page-settings" data-page="settings" class="hidden space-y-6">
@@ -1525,6 +1564,10 @@
         if (pushHash) {
           window.history.replaceState(null, "", `#tab-${tab}`);
         }
+
+        if (tab === "analytics") {
+          refreshAnalytics().catch(() => {});
+        }
       }
 
       async function refreshStatus() {
@@ -1686,14 +1729,17 @@
       }
 
       async function refreshAnalytics() {
-        const [summaryResp, retargetResp] = await Promise.all([
+        const [summaryResp, retargetResp, assistantResp] = await Promise.all([
           getJson("/api/analytics/summary"),
-          getJson("/api/retarget/summary")
+          getJson("/api/retarget/summary"),
+          getJson("/api/analytics/assistants?limit=300")
         ]);
         const summary = summaryResp.summary || {};
         const rates = summary.rates || {};
         const byOutcome = summary.byOutcome || [];
         const retarget = retargetResp.summary || {};
+        const assistants = assistantResp.assistants || [];
+        const recent = assistantResp.recent || [];
 
         setText("analyticsBookingRate", `${rates.bookingRate || 0}%`);
         setText("analyticsCompletionRate", `${rates.completionRate || 0}%`);
@@ -1713,6 +1759,49 @@
         setText("retargetVoicemail", fmtNum(retarget.voicemail || 0));
         setText("retargetAnsweredHungUp", fmtNum(retarget.answeredHungUp || 0));
         setText("retargetNoContact", fmtNum(retarget.noContact || 0));
+
+        const assistantRows = document.getElementById("analyticsAssistantRows");
+        if (assistantRows) {
+          assistantRows.innerHTML = assistants.length
+            ? assistants
+                .map((row) => {
+                  const last = row.lastActivityAt ? new Date(row.lastActivityAt).toLocaleString() : "--";
+                  return `<tr>
+                    <td class="px-4 py-3 text-xs">${escapeHtml(row.assistantId || "--")}</td>
+                    <td class="px-4 py-3">${fmtNum(row.total || 0)}</td>
+                    <td class="px-4 py-3">${fmtNum(row.attempted || 0)}</td>
+                    <td class="px-4 py-3">${fmtNum(row.booked || 0)}</td>
+                    <td class="px-4 py-3">${fmtNum(row.withTranscript || 0)} / ${fmtNum(row.withoutTranscript || 0)}</td>
+                    <td class="px-4 py-3">${escapeHtml(String(row.transcriptCoverage || 0))}%</td>
+                    <td class="px-4 py-3 text-xs">${escapeHtml(last)}</td>
+                  </tr>`;
+                })
+                .join("")
+            : `<tr><td colspan="7" class="px-4 py-4 text-sm text-outline">No assistant analytics yet.</td></tr>`;
+        }
+
+        const recentRows = document.getElementById("analyticsRecentRows");
+        if (recentRows) {
+          recentRows.innerHTML = recent.length
+            ? recent
+                .map((row) => {
+                  const leadLabel = row.company || row.phone || row.leadId || "--";
+                  const status = [row.status, row.outcome].filter(Boolean).join(" / ") || "--";
+                  const updatedAt = row.updatedAt ? new Date(row.updatedAt).toLocaleString() : "--";
+                  return `<tr>
+                    <td class="px-4 py-3 text-xs">${escapeHtml(row.assistantId || "--")}</td>
+                    <td class="px-4 py-3">${escapeHtml(leadLabel)}</td>
+                    <td class="px-4 py-3">${escapeHtml(status)}</td>
+                    <td class="px-4 py-3">${row.hasTranscript ? "Available" : "Missing"}</td>
+                    <td class="px-4 py-3 text-xs">${escapeHtml(updatedAt)}</td>
+                  </tr>`;
+                })
+                .join("")
+            : `<tr><td colspan="5" class="px-4 py-4 text-sm text-outline">No recent logs yet.</td></tr>`;
+        }
+
+        const refreshedAt = assistantResp.fetchedAt ? new Date(assistantResp.fetchedAt).toLocaleTimeString() : new Date().toLocaleTimeString();
+        setText("analyticsLastRefreshed", `Refresh every 5m · Updated ${refreshedAt}`);
       }
 
       async function refreshSettings() {
@@ -2361,12 +2450,14 @@
         setInterval(() => refreshLeads().catch(() => {}), 10000);
         setInterval(() => refreshRouteHealth().catch(() => {}), 15000);
         setInterval(() => {
-          if (state.activeTab === "analytics") refreshAnalytics().catch(() => {});
           if (state.activeTab === "settings") refreshSettings().catch(() => {});
           if (state.activeTab === "scheduler") refreshScheduler().catch(() => {});
           if (state.activeTab === "voices") refreshVoices().catch(() => {});
           if (state.activeTab === "prospector") refreshProspectorRuns().catch(() => {});
         }, 15000);
+        setInterval(() => {
+          if (state.activeTab === "analytics") refreshAnalytics().catch(() => {});
+        }, 300000);
       }
 
       init().catch((error) => showToast(String(error), true));
