@@ -1038,6 +1038,65 @@ async function fetchVapiCallById(callId: string): Promise<{ ok: boolean; status:
   }
 }
 
+function extractVapiCallRows(payload: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(payload)) {
+    return payload.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
+  }
+  if (!payload || typeof payload !== "object") return [];
+  const record = payload as Record<string, unknown>;
+  const candidates = [record.calls, record.data, record.results, record.items];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      return candidate.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
+    }
+  }
+  return [];
+}
+
+async function fetchRecentVapiCalls(limit: number): Promise<{
+  ok: boolean;
+  status: number;
+  calls: Array<Record<string, unknown>>;
+  error?: string;
+}> {
+  if (!config.vapiApiKey) {
+    return { ok: false, status: 0, calls: [], error: "Missing VAPI_API_KEY" };
+  }
+
+  const bounded = Math.max(10, Math.min(500, Math.trunc(limit || 200)));
+  const urls = [
+    `${config.vapiBaseUrl}/call?limit=${bounded}`,
+    `${config.vapiBaseUrl}/call?take=${bounded}`,
+    `${config.vapiBaseUrl}/call`
+  ];
+
+  let lastError = "";
+  let lastStatus = 0;
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${config.vapiApiKey}`,
+          Accept: "application/json"
+        }
+      });
+      const raw = await response.text();
+      lastStatus = response.status;
+      if (!response.ok) {
+        lastError = raw.slice(0, 300);
+        continue;
+      }
+      const parsed = JSON.parse(raw) as unknown;
+      const calls = extractVapiCallRows(parsed);
+      return { ok: true, status: response.status, calls };
+    } catch (error) {
+      lastError = String(error).slice(0, 300);
+    }
+  }
+
+  return { ok: false, status: lastStatus, calls: [], error: lastError || "Unable to list Vapi calls" };
+}
+
 async function patchLead(leadId: string, patch: Partial<Lead>): Promise<Lead | undefined> {
   return withState((state) => {
     const lead = state.leads[leadId];
@@ -3194,8 +3253,21 @@ export function createServer() {
       lastActivityAt?: string;
     };
 
-    const map = new Map<string, AssistantRow>();
-    const recent = leads
+    const emptyAssistantRow = (assistantId: string): AssistantRow => ({
+      assistantId,
+      total: 0,
+      attempted: 0,
+      queued: 0,
+      completed: 0,
+      booked: 0,
+      failed: 0,
+      withTranscript: 0,
+      withoutTranscript: 0,
+      transcriptCoverage: 0
+    });
+
+    const mapFromLeads = new Map<string, AssistantRow>();
+    const recentFromLeads = leads
       .filter((lead) => Boolean(lead.callId || lead.callAttemptedAt || lead.outcome || lead.transcript || lead.recordingUrl))
       .map((lead) => {
         const assistantId =
@@ -3231,20 +3303,7 @@ export function createServer() {
         safeString(lead.prospectorCallAssistantId) ||
         safeString(config.vapiAssistantId) ||
         "unknown";
-      const row =
-        map.get(assistantId) ||
-        ({
-          assistantId,
-          total: 0,
-          attempted: 0,
-          queued: 0,
-          completed: 0,
-          booked: 0,
-          failed: 0,
-          withTranscript: 0,
-          withoutTranscript: 0,
-          transcriptCoverage: 0
-        } as AssistantRow);
+      const row = mapFromLeads.get(assistantId) || emptyAssistantRow(assistantId);
 
       row.total += 1;
       if (lead.status === "queued" || lead.status === "retry" || lead.status === "dialing") row.queued += 1;
@@ -3255,11 +3314,8 @@ export function createServer() {
       const attempted = (lead.attempts || 0) > 0 || Boolean(lead.callAttemptedAt) || Boolean(lead.callId);
       if (attempted) {
         row.attempted += 1;
-        if (lead.transcript) {
-          row.withTranscript += 1;
-        } else {
-          row.withoutTranscript += 1;
-        }
+        if (lead.transcript) row.withTranscript += 1;
+        else row.withoutTranscript += 1;
       }
 
       const ts = Date.parse(lead.updatedAt || lead.callAttemptedAt || "");
@@ -3268,10 +3324,94 @@ export function createServer() {
         row.lastActivityAt = new Date(ts).toISOString();
       }
 
-      map.set(assistantId, row);
+      mapFromLeads.set(assistantId, row);
     }
 
-    const assistants = [...map.values()]
+    const assistantsFromLeads = [...mapFromLeads.values()]
+      .map((row) => ({
+        ...row,
+        transcriptCoverage: row.attempted > 0 ? Math.round((row.withTranscript / row.attempted) * 10000) / 100 : 0
+      }))
+      .sort((a, b) => a.assistantId.localeCompare(b.assistantId));
+
+    if (assistantsFromLeads.length > 0 || recentFromLeads.length > 0) {
+      res.json({
+        ok: true,
+        source: "state",
+        assistants: assistantsFromLeads,
+        recent: recentFromLeads,
+        fetchedAt: nowIso()
+      });
+      return;
+    }
+
+    const remote = await fetchRecentVapiCalls(limit);
+    if (!remote.ok) {
+      res.json({
+        ok: true,
+        source: "state",
+        assistants: [],
+        recent: [],
+        warning: `No local lead/call records and Vapi list unavailable (${remote.status}): ${remote.error || "unknown error"}`,
+        fetchedAt: nowIso()
+      });
+      return;
+    }
+
+    const mapFromVapi = new Map<string, AssistantRow>();
+    const recentFromVapi = remote.calls
+      .map((call) => {
+        const customer = asObject(call.customer);
+        const metadata = asObject(call.metadata);
+        const artifact = asObject(call.artifact);
+        const analysis = asObject(call.analysis);
+        const assistantId = safeString(call.assistantId) || safeString((asObject(call.assistant) || {}).id) || "unknown";
+        const transcript =
+          safeString(call.transcript) ||
+          safeString(artifact?.transcript) ||
+          safeString((asObject(call.message) || {}).transcript);
+        const updatedAt =
+          safeString(call.updatedAt) ||
+          safeString(call.endedAt) ||
+          safeString(call.startedAt) ||
+          safeString(call.createdAt) ||
+          nowIso();
+        return {
+          assistantId,
+          leadId: safeString(metadata?.leadId) || safeString(call.id) || "",
+          company: safeString(customer?.name),
+          phone: safeString(customer?.number),
+          status: safeString(call.status) || "unknown",
+          outcome: safeString(call.endedReason) || safeString(analysis?.successEvaluation),
+          hasTranscript: Boolean(transcript),
+          transcriptSummary: transcript ? transcript.slice(0, 220) : undefined,
+          callId: safeString(call.id),
+          updatedAt
+        };
+      })
+      .sort((a, b) => {
+        const assistantSort = a.assistantId.localeCompare(b.assistantId);
+        if (assistantSort !== 0) return assistantSort;
+        const aTs = Date.parse(a.updatedAt || "");
+        const bTs = Date.parse(b.updatedAt || "");
+        return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
+      })
+      .slice(0, limit);
+
+    for (const row of recentFromVapi) {
+      const bucket = mapFromVapi.get(row.assistantId) || emptyAssistantRow(row.assistantId);
+      bucket.total += 1;
+      bucket.attempted += 1;
+      if (row.status === "queued" || row.status === "ringing" || row.status === "in-progress") bucket.queued += 1;
+      if (row.status === "ended" || row.status === "completed") bucket.completed += 1;
+      if (row.status === "failed") bucket.failed += 1;
+      if (row.hasTranscript) bucket.withTranscript += 1;
+      else bucket.withoutTranscript += 1;
+      bucket.lastActivityAt = row.updatedAt;
+      mapFromVapi.set(row.assistantId, bucket);
+    }
+
+    const assistantsFromVapi = [...mapFromVapi.values()]
       .map((row) => ({
         ...row,
         transcriptCoverage: row.attempted > 0 ? Math.round((row.withTranscript / row.attempted) * 10000) / 100 : 0
@@ -3280,8 +3420,9 @@ export function createServer() {
 
     res.json({
       ok: true,
-      assistants,
-      recent,
+      source: "vapi",
+      assistants: assistantsFromVapi,
+      recent: recentFromVapi,
       fetchedAt: nowIso()
     });
   });
