@@ -76,6 +76,10 @@
             <span class="material-symbols-outlined">travel_explore</span>
             Prospector
           </a>
+          <a data-nav-tab="voices" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-voices">
+            <span class="material-symbols-outlined">record_voice_over</span>
+            Voices
+          </a>
           <a data-nav-tab="analytics" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-analytics">
             <span class="material-symbols-outlined">insights</span>
             Analytics
@@ -103,6 +107,7 @@
           <a data-top-tab="campaigns" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-campaigns">Agent Queue</a>
           <a data-top-tab="scheduler" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-scheduler">Auto Campaigns</a>
           <a data-top-tab="prospector" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-prospector">Prospector</a>
+          <a data-top-tab="voices" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-voices">Voices</a>
           <a data-top-tab="live-monitor" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-live-monitor">Real-time Alerts</a>
         </nav>
       </div>
@@ -676,6 +681,131 @@
           </section>
         </section>
 
+        <section id="page-voices" data-page="voices" class="hidden space-y-6">
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 class="font-headline text-xl font-extrabold text-on-surface">Voices Builder</h3>
+                <p class="text-sm text-outline">Create assistant-specific campaign bots with custom calendar links, spin up Vapi assistants, and launch isolated batch campaigns.</p>
+              </div>
+              <div class="flex gap-2">
+                <button id="voicesRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh</button>
+                <button id="voicesRunBatchBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Run Batch</button>
+              </div>
+            </div>
+
+            <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Profile Name
+                <input id="voicesName" type="text" placeholder="Alex Team Bot" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Owner / Team Member
+                <input id="voicesOwnerName" type="text" placeholder="Alex" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Assistant ID (optional if spinning up)
+                <input id="voicesAssistantId" type="text" placeholder="assistant_xxx" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Calendar Link (SMS follow-up)
+                <input id="voicesCalendarUrl" type="text" placeholder="https://calendly.com/owner/30min" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Campaign Label
+                <input id="voicesCampaignName" type="text" placeholder="Voices · Alex Team Bot" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">First Message
+                <input id="voicesFirstMessage" type="text" placeholder="Human opener used by the assistant" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">LLM Provider
+                <input id="voicesLlmProvider" type="text" value="openai" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">LLM Model
+                <input id="voicesLlmModel" type="text" value="gpt-4.1-mini" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">LLM Temperature
+                <input id="voicesLlmTemperature" type="number" step="0.05" min="0" max="1.2" value="0.35" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Transcriber Provider
+                <input id="voicesTranscriberProvider" type="text" value="deepgram" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Transcriber Model
+                <input id="voicesTranscriberModel" type="text" value="nova-3" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Batch Size / Sample Pool
+                <div class="mt-2 grid grid-cols-2 gap-2">
+                  <input id="voicesBatchSize" type="number" min="1" max="200" value="30" class="w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+                  <input id="voicesSamplePoolSize" type="number" min="50" max="2000" value="300" class="w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+                </div>
+              </label>
+            </div>
+
+            <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">System Prompt
+              <textarea id="voicesSystemPrompt" rows="7" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm"></textarea>
+            </label>
+
+            <input id="voicesProfileId" type="hidden" />
+            <div class="mt-4 flex flex-wrap gap-2">
+              <button id="voicesSaveProfileBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Save Profile</button>
+              <button id="voicesSpinUpBtn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Spin Up Vapi Assistant</button>
+              <button id="voicesClearFormBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">New Profile</button>
+            </div>
+            <div id="voicesResult" class="mt-4 rounded-xl border border-outline-variant/30 bg-white p-4 text-sm text-on-surface">Voices tool ready.</div>
+          </section>
+
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <h3 class="font-headline text-lg font-extrabold text-on-surface">Voice Profiles</h3>
+            <div class="mt-4 overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-surface-container-low/40">
+                  <tr>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Profile</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Assistant</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Calendar</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Default Batch</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="voicesProfilesRows" class="divide-y divide-outline-variant/10"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+            <div class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+              <h3 class="font-headline text-lg font-extrabold text-on-surface">Assistant Analytics</h3>
+              <div class="mt-4 overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <thead class="bg-surface-container-low/40">
+                    <tr>
+                      <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Assistant</th>
+                      <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Total</th>
+                      <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Attempted</th>
+                      <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Booked</th>
+                      <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Booking %</th>
+                    </tr>
+                  </thead>
+                  <tbody id="voicesAnalyticsRows" class="divide-y divide-outline-variant/10"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+              <h3 class="font-headline text-lg font-extrabold text-on-surface">Recent Voice Runs</h3>
+              <div class="mt-4 overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                  <thead class="bg-surface-container-low/40">
+                    <tr>
+                      <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Run</th>
+                      <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Profile</th>
+                      <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
+                      <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Queued</th>
+                      <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Started</th>
+                    </tr>
+                  </thead>
+                  <tbody id="voicesRunsRows" class="divide-y divide-outline-variant/10"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </section>
+
         <section id="page-analytics" data-page="analytics" class="hidden space-y-6">
           <section class="grid grid-cols-1 gap-5 md:grid-cols-3">
             <div class="rounded-xl bg-surface-container-lowest p-5 shadow-sm">
@@ -727,7 +857,7 @@
     </main>
 
     <script>
-      const TABS = ["dashboard", "campaigns", "scheduler", "prospector", "live-monitor", "analytics", "settings"];
+      const TABS = ["dashboard", "campaigns", "scheduler", "prospector", "voices", "live-monitor", "analytics", "settings"];
       const state = {
         activeTab: "dashboard",
         files: [],
@@ -737,6 +867,7 @@
         prospectorRecords: [],
         schedulerStatus: null,
         schedulerLogs: [],
+        voicesStatus: null,
         routeHealth: {
           healthy: false,
           checks: [],
@@ -894,6 +1025,131 @@
         renderSchedulerStatus(statusResp);
         renderSchedulerRuns(statusResp.runs || []);
         renderSchedulerLogs(state.schedulerLogs);
+      }
+
+      function voicesFormPayload() {
+        return {
+          id: document.getElementById("voicesProfileId")?.value?.trim() || undefined,
+          name: document.getElementById("voicesName")?.value?.trim() || "",
+          ownerName: document.getElementById("voicesOwnerName")?.value?.trim() || "",
+          assistantId: document.getElementById("voicesAssistantId")?.value?.trim() || "",
+          calendarUrl: document.getElementById("voicesCalendarUrl")?.value?.trim() || "",
+          campaignName: document.getElementById("voicesCampaignName")?.value?.trim() || "",
+          firstMessage: document.getElementById("voicesFirstMessage")?.value?.trim() || "",
+          systemPrompt: document.getElementById("voicesSystemPrompt")?.value?.trim() || "",
+          llmProvider: document.getElementById("voicesLlmProvider")?.value?.trim() || "",
+          llmModel: document.getElementById("voicesLlmModel")?.value?.trim() || "",
+          llmTemperature: Number(document.getElementById("voicesLlmTemperature")?.value || 0.35),
+          transcriberProvider: document.getElementById("voicesTranscriberProvider")?.value?.trim() || "",
+          transcriberModel: document.getElementById("voicesTranscriberModel")?.value?.trim() || "",
+          defaultBatchSize: Number(document.getElementById("voicesBatchSize")?.value || 30),
+          defaultSamplePoolSize: Number(document.getElementById("voicesSamplePoolSize")?.value || 300)
+        };
+      }
+
+      function applyVoiceProfileToForm(profile) {
+        const setVal = (id, value) => {
+          const node = document.getElementById(id);
+          if (!node) return;
+          node.value = value === undefined || value === null ? "" : String(value);
+        };
+        setVal("voicesProfileId", profile?.id || "");
+        setVal("voicesName", profile?.name || "");
+        setVal("voicesOwnerName", profile?.ownerName || "");
+        setVal("voicesAssistantId", profile?.assistantId || "");
+        setVal("voicesCalendarUrl", profile?.calendarUrl || "");
+        setVal("voicesCampaignName", profile?.campaignName || "");
+        setVal("voicesFirstMessage", profile?.firstMessage || "");
+        setVal("voicesSystemPrompt", profile?.systemPrompt || "");
+        setVal("voicesLlmProvider", profile?.llmProvider || "openai");
+        setVal("voicesLlmModel", profile?.llmModel || "gpt-4.1-mini");
+        setVal("voicesLlmTemperature", profile?.llmTemperature ?? 0.35);
+        setVal("voicesTranscriberProvider", profile?.transcriberProvider || "deepgram");
+        setVal("voicesTranscriberModel", profile?.transcriberModel || "nova-3");
+        setVal("voicesBatchSize", profile?.defaultBatchSize ?? 30);
+        setVal("voicesSamplePoolSize", profile?.defaultSamplePoolSize ?? 300);
+      }
+
+      function renderVoicesResult(message, error = false) {
+        const root = document.getElementById("voicesResult");
+        if (!root) return;
+        root.className = `mt-4 rounded-xl border p-4 text-sm ${error ? "border-amber-300 bg-amber-50 text-amber-800" : "border-outline-variant/30 bg-white text-on-surface"}`;
+        root.innerHTML = String(message || "");
+      }
+
+      function renderVoicesProfiles(profiles) {
+        const root = document.getElementById("voicesProfilesRows");
+        if (!root) return;
+        if (!Array.isArray(profiles) || profiles.length === 0) {
+          root.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-sm text-outline">No voice profiles yet.</td></tr>`;
+          return;
+        }
+        root.innerHTML = profiles
+          .map((profile) => `<tr>
+            <td class="px-4 py-3">
+              <div class="font-semibold">${escapeHtml(profile.name || "--")}</div>
+              <div class="text-[11px] text-outline">${escapeHtml(profile.ownerName || "--")}</div>
+            </td>
+            <td class="px-4 py-3 text-xs">${escapeHtml(profile.assistantId || "--")}</td>
+            <td class="px-4 py-3 text-xs">${escapeHtml(profile.calendarUrl || "--")}</td>
+            <td class="px-4 py-3">${escapeHtml(String(profile.defaultBatchSize || 0))} / ${escapeHtml(String(profile.defaultSamplePoolSize || 0))}</td>
+            <td class="px-4 py-3">
+              <div class="flex flex-wrap gap-2">
+                <button data-voices-edit="${escapeHtml(profile.id)}" class="rounded-lg border border-outline-variant/30 bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-wider">Edit</button>
+                <button data-voices-delete="${escapeHtml(profile.id)}" class="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-700">Delete</button>
+              </div>
+            </td>
+          </tr>`)
+          .join("");
+      }
+
+      function renderVoicesRuns(runs) {
+        const root = document.getElementById("voicesRunsRows");
+        if (!root) return;
+        if (!Array.isArray(runs) || runs.length === 0) {
+          root.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-sm text-outline">No voice runs yet.</td></tr>`;
+          return;
+        }
+        root.innerHTML = runs
+          .slice(0, 40)
+          .map((run) => `<tr>
+            <td class="px-4 py-3 text-xs">${escapeHtml(run.id || "--")}</td>
+            <td class="px-4 py-3">${escapeHtml(run.profileName || "--")}</td>
+            <td class="px-4 py-3">${escapeHtml(run.status || "--")}</td>
+            <td class="px-4 py-3">${escapeHtml(String(run.queuedLeads || 0))}</td>
+            <td class="px-4 py-3 text-xs">${escapeHtml(run.startedAt ? new Date(run.startedAt).toLocaleString() : "--")}</td>
+          </tr>`)
+          .join("");
+      }
+
+      function renderVoicesAnalytics(rows) {
+        const root = document.getElementById("voicesAnalyticsRows");
+        if (!root) return;
+        if (!Array.isArray(rows) || rows.length === 0) {
+          root.innerHTML = `<tr><td colspan="5" class="px-4 py-4 text-sm text-outline">No voice analytics yet.</td></tr>`;
+          return;
+        }
+        root.innerHTML = rows
+          .slice(0, 40)
+          .map((row) => `<tr>
+            <td class="px-4 py-3">
+              <div class="font-semibold">${escapeHtml(row.profileName || "--")}</div>
+              <div class="text-[11px] text-outline">${escapeHtml(row.assistantId || "--")}</div>
+            </td>
+            <td class="px-4 py-3">${escapeHtml(String(row.total || 0))}</td>
+            <td class="px-4 py-3">${escapeHtml(String(row.attempted || 0))}</td>
+            <td class="px-4 py-3">${escapeHtml(String(row.booked || 0))}</td>
+            <td class="px-4 py-3">${escapeHtml(String(row.bookingRate || 0))}%</td>
+          </tr>`)
+          .join("");
+      }
+
+      async function refreshVoices() {
+        const data = await getJson("/api/voices/status");
+        state.voicesStatus = data;
+        renderVoicesProfiles(data.profiles || []);
+        renderVoicesRuns(data.runs || []);
+        renderVoicesAnalytics(data.analytics || []);
       }
 
       function artifactLookupValue() {
@@ -1823,6 +2079,105 @@
           }
         });
 
+        document.getElementById("voicesRefreshBtn").addEventListener("click", async () => {
+          try {
+            await refreshVoices();
+            showToast("Voices refreshed.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("voicesClearFormBtn").addEventListener("click", () => {
+          applyVoiceProfileToForm(undefined);
+          renderVoicesResult("Ready for a new voice profile.");
+        });
+
+        document.getElementById("voicesSaveProfileBtn").addEventListener("click", async () => {
+          try {
+            const payload = voicesFormPayload();
+            if (!payload.name) {
+              throw new Error("Profile name is required.");
+            }
+            const data = await postJson("/api/voices/profile", payload);
+            applyVoiceProfileToForm(data.profile || payload);
+            await refreshVoices();
+            renderVoicesResult(`<p><strong>Saved profile:</strong> ${escapeHtml(data.profile?.name || payload.name)}</p>`);
+            showToast("Voice profile saved.");
+          } catch (error) {
+            renderVoicesResult(escapeHtml(String(error)), true);
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("voicesSpinUpBtn").addEventListener("click", async () => {
+          try {
+            const payload = voicesFormPayload();
+            if (!payload.id) {
+              if (!payload.name) throw new Error("Save a profile first.");
+              const saved = await postJson("/api/voices/profile", payload);
+              applyVoiceProfileToForm(saved.profile || payload);
+            }
+            const profileId = document.getElementById("voicesProfileId")?.value?.trim();
+            if (!profileId) throw new Error("Profile ID missing after save.");
+            const data = await postJson(`/api/voices/profile/${encodeURIComponent(profileId)}/spin-up`, {});
+            applyVoiceProfileToForm(data.profile);
+            await refreshVoices();
+            renderVoicesResult(`<p><strong>Assistant created:</strong> ${escapeHtml(data.assistantId || "--")}</p>`);
+            showToast("Vapi assistant spun up for this voice profile.");
+          } catch (error) {
+            renderVoicesResult(escapeHtml(String(error)), true);
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("voicesRunBatchBtn").addEventListener("click", async () => {
+          try {
+            const payload = voicesFormPayload();
+            const profileId = payload.id || document.getElementById("voicesProfileId")?.value?.trim() || "";
+            if (!profileId) throw new Error("Select or save a voice profile first.");
+            const data = await postJson(`/api/voices/profile/${encodeURIComponent(profileId)}/run`, {
+              batchSize: payload.defaultBatchSize,
+              samplePoolSize: payload.defaultSamplePoolSize,
+              campaignName: payload.campaignName || undefined
+            });
+            await Promise.all([refreshVoices(), refreshStatus(), refreshLeads(), refreshLogs()]);
+            renderVoicesResult(`<p><strong>Run:</strong> ${escapeHtml(data.run?.id || "--")} (${escapeHtml(data.run?.status || "--")})</p><p><strong>Summary:</strong> ${escapeHtml(data.run?.summary || "--")}</p>`);
+            showToast("Voice batch run completed.");
+          } catch (error) {
+            renderVoicesResult(escapeHtml(String(error)), true);
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("voicesProfilesRows")?.addEventListener("click", async (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const editId = target.getAttribute("data-voices-edit");
+          if (editId) {
+            const profiles = state.voicesStatus?.profiles || [];
+            const profile = profiles.find((row) => row.id === editId);
+            if (profile) {
+              applyVoiceProfileToForm(profile);
+              renderVoicesResult(`Loaded profile <strong>${escapeHtml(profile.name)}</strong>.`);
+            }
+            return;
+          }
+
+          const deleteId = target.getAttribute("data-voices-delete");
+          if (!deleteId) return;
+          try {
+            await postJson(`/api/voices/profile/${encodeURIComponent(deleteId)}/delete`, {});
+            if (document.getElementById("voicesProfileId")?.value === deleteId) {
+              applyVoiceProfileToForm(undefined);
+            }
+            await refreshVoices();
+            showToast("Voice profile deleted.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
         document.getElementById("routeHealthRefreshBtn").addEventListener("click", async () => {
           try {
             await refreshRouteHealth();
@@ -1879,6 +2234,7 @@
           refreshLeads(),
           refreshScheduler(),
           refreshProspectorRuns(),
+          refreshVoices(),
           refreshAnalytics(),
           refreshSettings(),
           refreshRouteHealth()
@@ -1891,6 +2247,7 @@
           if (state.activeTab === "analytics") refreshAnalytics().catch(() => {});
           if (state.activeTab === "settings") refreshSettings().catch(() => {});
           if (state.activeTab === "scheduler") refreshScheduler().catch(() => {});
+          if (state.activeTab === "voices") refreshVoices().catch(() => {});
           if (state.activeTab === "prospector") refreshProspectorRuns().catch(() => {});
         }, 15000);
       }

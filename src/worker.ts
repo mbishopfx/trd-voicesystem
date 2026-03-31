@@ -254,9 +254,21 @@ export async function dialOneLead(): Promise<{ dispatched: boolean; message: str
   try {
     runtimeInfo("worker", "Creating outbound Vapi call", {
       leadId: lead.id,
-      phone: lead.phone
+      phone: lead.phone,
+      assistantIdOverride: lead.assistantIdOverride || "",
+      bookingUrlOverride: lead.bookingUrlOverride || ""
     });
-    const result = await createOutboundCall(lead);
+    const additionalVariables: Record<string, string> = {};
+    if (lead.bookingUrlOverride) {
+      additionalVariables.bookingUrl = lead.bookingUrlOverride;
+      additionalVariables.calendlyUrl = lead.bookingUrlOverride;
+      additionalVariables.googleCalendarUrl = lead.bookingUrlOverride;
+    }
+
+    const result = await createOutboundCall(lead, {
+      assistantId: lead.assistantIdOverride || lead.prospectorCallAssistantId || undefined,
+      additionalVariables: Object.keys(additionalVariables).length ? additionalVariables : undefined
+    });
     const attemptedLead = await markCallCreated(lead.id, result.id);
     runtimeInfo("worker", "Call created", {
       leadId: lead.id,

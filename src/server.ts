@@ -95,6 +95,13 @@ import {
   updateBulkCampaignSchedulerSettings
 } from "./bulkCampaignScheduler.js";
 import { getVapiCreditGuardStatus } from "./vapiCredits.js";
+import {
+  deleteVoiceProfile,
+  getVoicesDashboard,
+  runVoiceBatchCampaign,
+  spinUpAssistantForProfile,
+  upsertVoiceProfile
+} from "./voices.js";
 
 type RawBodyRequest = Request & { rawBody?: string };
 let reconcileLoopStarted = false;
@@ -1711,7 +1718,8 @@ async function executeSchedulingToolInvocation(
     const firstName = safeString(args.firstName) || lead?.firstName || extractFirstNameFromToolPayload(payload);
     const greeting = firstName ? `Hi ${firstName},` : "Hi,";
     const liveLink = safeString(args.liveLink) || safeString(args.live_link) || lead?.deployedSiteUrl || "";
-    const bookingUrl = safeString(args.bookingUrl) || safeString(args.booking_url) || resolvedBookingUrl();
+    const bookingUrl =
+      safeString(args.bookingUrl) || safeString(args.booking_url) || lead?.bookingUrlOverride || resolvedBookingUrl();
     const smsBody =
       safeString(args.message) ||
       (liveLink
@@ -1764,10 +1772,11 @@ async function executeSchedulingToolInvocation(
     if (!name) throw new Error("name is required");
 
     if (!email) {
+      const fallbackBookingUrl = leadFromPayload?.bookingUrlOverride || resolvedBookingUrl();
       if (phoneHint) {
         const sent = await sendSmsMessage({
           to: phoneHint,
-          body: `No problem. Use this booking link: ${resolvedBookingUrl()}. A team member may reach out before the meeting.`
+          body: `No problem. Use this booking link: ${fallbackBookingUrl}. A team member may reach out before the meeting.`
         });
 
         if (leadFromPayload) {
@@ -1820,10 +1829,11 @@ async function executeSchedulingToolInvocation(
         notes: safeString(args.notes)
       });
     } catch (error) {
+      const fallbackBookingUrl = leadFromPayload?.bookingUrlOverride || resolvedBookingUrl();
       if (phoneHint) {
         const sent = await sendSmsMessage({
           to: phoneHint,
-          body: `We hit a scheduling issue right now. Use this booking link: ${resolvedBookingUrl()}. A team member may reach out before the meeting.`
+          body: `We hit a scheduling issue right now. Use this booking link: ${fallbackBookingUrl}. A team member may reach out before the meeting.`
         });
         if (leadFromPayload) {
           await patchLead(leadFromPayload.id, {
@@ -1863,11 +1873,10 @@ async function executeSchedulingToolInvocation(
           force: true
         });
         if (asBool(args.sendSms, true) && (phoneHint || updated.phone)) {
+          const confirmationUrl = updated.bookingUrlOverride || booking.rescheduleUrl || booking.cancelUrl || resolvedBookingUrl();
           const sent = await sendSmsMessage({
             to: phoneHint || updated.phone,
-            body:
-              `You're booked for the free AI Search strategy session.` +
-              ` Confirmation: ${booking.rescheduleUrl || booking.cancelUrl || resolvedBookingUrl()}`
+            body: `You're booked for the free AI Search strategy session. Confirmation: ${confirmationUrl}`
           });
           await patchLead(updated.id, {
             winSmsSentAt: nowIso(),
@@ -2186,6 +2195,80 @@ export function createServer() {
     const run = await runBulkSchedulerCampaign("manual");
     const status = await getBulkCampaignSchedulerStatus();
     res.json({ ok: true, run, status });
+  });
+
+  app.get("/api/voices/status", async (_req: Request, res: Response) => {
+    const data = await getVoicesDashboard();
+    res.json({ ok: true, ...data });
+  });
+
+  app.post("/api/voices/profile", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const name = safeString(body.name);
+    if (!name) {
+      res.status(400).json({ ok: false, error: "name is required" });
+      return;
+    }
+
+    const profile = await upsertVoiceProfile({
+      id: safeString(body.id),
+      name,
+      ownerName: safeString(body.ownerName),
+      assistantId: safeString(body.assistantId),
+      calendarUrl: safeString(body.calendarUrl),
+      campaignName: safeString(body.campaignName),
+      firstMessage: safeString(body.firstMessage),
+      systemPrompt: safeString(body.systemPrompt),
+      llmProvider: safeString(body.llmProvider),
+      llmModel: safeString(body.llmModel),
+      llmTemperature: typeof body.llmTemperature === "number" ? body.llmTemperature : Number(body.llmTemperature),
+      transcriberProvider: safeString(body.transcriberProvider),
+      transcriberModel: safeString(body.transcriberModel),
+      defaultBatchSize: asOptionalInt(body.defaultBatchSize, 1, 200),
+      defaultSamplePoolSize: asOptionalInt(body.defaultSamplePoolSize, 50, 2000),
+      active: asOptionalBool(body.active)
+    });
+
+    runtimeInfo("agent", "voices profile upserted", {
+      profileId: profile.id,
+      assistantId: profile.assistantId || "",
+      ownerName: profile.ownerName || ""
+    });
+    res.json({ ok: true, profile });
+  });
+
+  app.post("/api/voices/profile/:id/delete", async (req: Request, res: Response) => {
+    const removed = await deleteVoiceProfile(req.params.id);
+    if (!removed) {
+      res.status(404).json({ ok: false, error: "Voice profile not found" });
+      return;
+    }
+    res.json({ ok: true, deleted: req.params.id });
+  });
+
+  app.post("/api/voices/profile/:id/spin-up", async (req: Request, res: Response) => {
+    try {
+      const result = await spinUpAssistantForProfile(req.params.id);
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.post("/api/voices/profile/:id/run", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    try {
+      const run = await runVoiceBatchCampaign(req.params.id, {
+        trigger: "manual",
+        batchSize: asOptionalInt(body.batchSize, 1, 200),
+        samplePoolSize: asOptionalInt(body.samplePoolSize, 50, 2000),
+        campaignName: safeString(body.campaignName)
+      });
+      const status = await getVoicesDashboard();
+      res.json({ ok: true, run, status });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
   });
 
   app.get("/api/logs/worker", (req: Request, res: Response) => {

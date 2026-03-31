@@ -60,6 +60,8 @@ export const config = {
   templateLockPath: path.resolve(cwd, "data", "state", "templates.lock"),
   inboundStatePath: path.resolve(cwd, "data", "state", "inbound.json"),
   inboundLockPath: path.resolve(cwd, "data", "state", "inbound.lock"),
+  voicesStatePath: path.resolve(cwd, "data", "state", "voices.json"),
+  voicesLockPath: path.resolve(cwd, "data", "state", "voices.lock"),
   bulkSchedulerStatePath: path.resolve(cwd, "data", "state", "bulk-scheduler.json"),
   bulkSchedulerLockPath: path.resolve(cwd, "data", "state", "bulk-scheduler.lock"),
   generatedSitesDir: path.resolve(cwd, "data", "generated-sites"),

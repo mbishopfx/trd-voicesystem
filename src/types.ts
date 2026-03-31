@@ -16,6 +16,10 @@ export interface Lead {
   email?: string;
   timezone: string;
   campaign: string;
+  assistantIdOverride?: string;
+  bookingUrlOverride?: string;
+  voiceProfileId?: string;
+  voiceProfileName?: string;
   sourceFile: string;
   sourceRow: number;
   findings?: string;
