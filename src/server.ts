@@ -100,6 +100,12 @@ import {
   setBulkCampaignSchedulerEnabled,
   updateBulkCampaignSchedulerSettings
 } from "./bulkCampaignScheduler.js";
+import {
+  getProspectorAutoSchedulerStatus,
+  runProspectorAutoSchedulerNow,
+  setProspectorAutoSchedulerEnabled,
+  startProspectorAutoScheduler
+} from "./prospectorAutoScheduler.js";
 import { getVapiCreditGuardStatus } from "./vapiCredits.js";
 import {
   deleteVoiceProfile,
@@ -2285,6 +2291,29 @@ export function createServer() {
   app.post("/api/bulk-scheduler/run", async (_req: Request, res: Response) => {
     const run = await runBulkSchedulerCampaign("manual");
     const status = await getBulkCampaignSchedulerStatus();
+    res.json({ ok: true, run, status });
+  });
+
+  app.get("/api/prospector-auto-scheduler/status", async (_req: Request, res: Response) => {
+    const status = getProspectorAutoSchedulerStatus();
+    res.json({ ok: true, ...status });
+  });
+
+  app.post("/api/prospector-auto-scheduler/toggle", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const enabled = asOptionalBool(body.enabled);
+    if (enabled === undefined) {
+      res.status(400).json({ ok: false, error: "enabled must be true or false" });
+      return;
+    }
+    const settings = setProspectorAutoSchedulerEnabled(enabled);
+    const status = getProspectorAutoSchedulerStatus();
+    res.json({ ok: true, settings, status });
+  });
+
+  app.post("/api/prospector-auto-scheduler/run", async (_req: Request, res: Response) => {
+    const run = await runProspectorAutoSchedulerNow();
+    const status = getProspectorAutoSchedulerStatus();
     res.json({ ok: true, run, status });
   });
 
@@ -5046,6 +5075,9 @@ export function createServer() {
   });
 
   startReconcileLoop();
+  startProspectorAutoScheduler().catch((error) => {
+    runtimeError("scheduler", "failed to start prospector auto scheduler", error);
+  });
   return app;
 }
 

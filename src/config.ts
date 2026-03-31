@@ -37,6 +37,17 @@ function asHourList(name: string, fallback: number[]): number[] {
   return unique.length ? unique : fallback;
 }
 
+function asStringList(name: string, fallback: string[]): string[] {
+  const raw = process.env[name];
+  if (!raw || !raw.trim()) return fallback;
+  const values = raw
+    .split(",")
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+  const unique = Array.from(new Set(values));
+  return unique.length ? unique : fallback;
+}
+
 export const config = {
   port: asInt("PORT", 3000),
   databaseUrl:
@@ -106,6 +117,40 @@ export const config = {
   bulkSchedulerRunWindowMinutes: Math.max(1, Math.min(15, asInt("BULK_SCHEDULER_RUN_WINDOW_MINUTES", 4))),
   bulkSchedulerCampaignName:
     process.env.BULK_SCHEDULER_CAMPAIGN_NAME?.trim() || "GHL Random Daily Campaign",
+  prospectorAutoSchedulerEnabled: asBool("PROSPECTOR_AUTO_SCHEDULER_ENABLED", true),
+  prospectorAutoSchedulerTimezone: process.env.PROSPECTOR_AUTO_SCHEDULER_TIMEZONE?.trim() || "America/New_York",
+  prospectorAutoSchedulerHours: asHourList("PROSPECTOR_AUTO_SCHEDULER_HOURS", [9, 14]),
+  prospectorAutoSchedulerTickSeconds: Math.max(10, Math.min(300, asInt("PROSPECTOR_AUTO_SCHEDULER_TICK_SECONDS", 30))),
+  prospectorAutoSchedulerRunWindowMinutes: Math.max(
+    1,
+    Math.min(15, asInt("PROSPECTOR_AUTO_SCHEDULER_RUN_WINDOW_MINUTES", 5))
+  ),
+  prospectorAutoSchedulerIcpPool: asStringList("PROSPECTOR_AUTO_SCHEDULER_ICP_POOL", [
+    "med spa",
+    "roofing contractor",
+    "plumber",
+    "dental clinic",
+    "real estate broker",
+    "chiropractor",
+    "personal injury law firm",
+    "home remodeling contractor",
+    "landscaping company",
+    "HVAC contractor"
+  ]),
+  prospectorAutoSchedulerNjCities: asStringList("PROSPECTOR_AUTO_SCHEDULER_NJ_CITIES", [
+    "Newark",
+    "Jersey City",
+    "Paterson",
+    "Elizabeth",
+    "Edison",
+    "Woodbridge",
+    "Lakewood",
+    "Toms River",
+    "Trenton",
+    "Clifton",
+    "Camden",
+    "Hoboken"
+  ]),
 
   vapiApiKey: process.env.VAPI_API_KEY?.trim() || "",
   vapiPublicKey: process.env.VAPI_PUBLIC_KEY?.trim() || "",
