@@ -751,6 +751,20 @@
 
           <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
             <h3 class="font-headline text-lg font-extrabold text-on-surface">Voice Profiles</h3>
+            <div class="mt-4 grid grid-cols-1 gap-4 rounded-xl border border-outline-variant/30 bg-white p-4 lg:grid-cols-3">
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Select Voice
+                <select id="voicesCsvProfileId" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm"></select>
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Campaign Name (optional)
+                <input id="voicesCsvCampaignName" type="text" placeholder="Voices · CSV Campaign" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">CSV Upload
+                <input id="voicesCsvFile" type="file" accept=".csv,text/csv" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold" />
+              </label>
+              <div class="lg:col-span-3">
+                <button id="voicesCsvRunBtn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Run CSV Campaign</button>
+              </div>
+            </div>
             <div class="mt-4 overflow-x-auto">
               <table class="w-full text-left text-sm">
                 <thead class="bg-surface-container-low/40">
@@ -1103,6 +1117,31 @@
           .join("");
       }
 
+      function populateVoicesProfileSelect(profiles) {
+        const select = document.getElementById("voicesCsvProfileId");
+        if (!(select instanceof HTMLSelectElement)) return;
+        const previous = select.value;
+        const items = Array.isArray(profiles) ? profiles : [];
+        if (items.length === 0) {
+          select.innerHTML = `<option value="">No voices available</option>`;
+          return;
+        }
+
+        select.innerHTML = items
+          .map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)} ${profile.assistantId ? "" : "(no assistant)"}</option>`)
+          .join("");
+
+        if (previous && items.some((profile) => profile.id === previous)) {
+          select.value = previous;
+          return;
+        }
+
+        const activeProfileId = document.getElementById("voicesProfileId")?.value?.trim();
+        if (activeProfileId && items.some((profile) => profile.id === activeProfileId)) {
+          select.value = activeProfileId;
+        }
+      }
+
       function renderVoicesRuns(runs) {
         const root = document.getElementById("voicesRunsRows");
         if (!root) return;
@@ -1148,6 +1187,7 @@
         const data = await getJson("/api/voices/status");
         state.voicesStatus = data;
         renderVoicesProfiles(data.profiles || []);
+        populateVoicesProfileSelect(data.profiles || []);
         renderVoicesRuns(data.runs || []);
         renderVoicesAnalytics(data.analytics || []);
       }
@@ -2088,6 +2128,15 @@
           }
         });
 
+        document.getElementById("voicesCsvProfileId")?.addEventListener("change", (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLSelectElement)) return;
+          const profiles = state.voicesStatus?.profiles || [];
+          const profile = profiles.find((row) => row.id === target.value);
+          if (!profile) return;
+          applyVoiceProfileToForm(profile);
+        });
+
         document.getElementById("voicesClearFormBtn").addEventListener("click", () => {
           applyVoiceProfileToForm(undefined);
           renderVoicesResult("Ready for a new voice profile.");
@@ -2144,6 +2193,44 @@
             await Promise.all([refreshVoices(), refreshStatus(), refreshLeads(), refreshLogs()]);
             renderVoicesResult(`<p><strong>Run:</strong> ${escapeHtml(data.run?.id || "--")} (${escapeHtml(data.run?.status || "--")})</p><p><strong>Summary:</strong> ${escapeHtml(data.run?.summary || "--")}</p>`);
             showToast("Voice batch run completed.");
+          } catch (error) {
+            renderVoicesResult(escapeHtml(String(error)), true);
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("voicesCsvRunBtn").addEventListener("click", async () => {
+          try {
+            const select = document.getElementById("voicesCsvProfileId");
+            if (!(select instanceof HTMLSelectElement)) {
+              throw new Error("Voice selector is unavailable.");
+            }
+            const profileId = select.value?.trim() || "";
+            if (!profileId) throw new Error("Select a voice profile first.");
+
+            const profiles = state.voicesStatus?.profiles || [];
+            const profile = profiles.find((row) => row.id === profileId);
+            if (!profile) throw new Error("Selected voice profile was not found.");
+            if (!profile.assistantId) throw new Error("Selected profile needs an assistant ID. Spin up the assistant first.");
+
+            const fileInput = document.getElementById("voicesCsvFile");
+            if (!(fileInput instanceof HTMLInputElement) || !fileInput.files || !fileInput.files[0]) {
+              throw new Error("Upload a CSV file first.");
+            }
+            const file = fileInput.files[0];
+            const csvContent = await readFile(file);
+            const campaignName = document.getElementById("voicesCsvCampaignName")?.value?.trim() || undefined;
+
+            const data = await postJson(`/api/voices/profile/${encodeURIComponent(profileId)}/upload-run`, {
+              fileName: file.name,
+              csvContent,
+              campaignName,
+              trustImportLeads: true
+            });
+
+            await Promise.all([refreshVoices(), refreshStatus(), refreshLeads(), refreshLogs()]);
+            renderVoicesResult(`<p><strong>CSV Run:</strong> ${escapeHtml(data.run?.id || "--")} (${escapeHtml(data.run?.status || "--")})</p><p><strong>Summary:</strong> ${escapeHtml(data.run?.summary || "--")}</p>`);
+            showToast("Voice CSV campaign started.");
           } catch (error) {
             renderVoicesResult(escapeHtml(String(error)), true);
             showToast(String(error), true);

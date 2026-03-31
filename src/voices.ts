@@ -9,6 +9,7 @@ import {
   withDbJsonState
 } from "./stateDb.js";
 import { fetchLocationContacts, logBulkSchedulerQueuedContact, type GhlSmartListContact } from "./integrations/ghl.js";
+import { buildLeadFromCsvRow, parseCsvRows } from "./ingest.js";
 import { normalizePhone } from "./phone.js";
 import { runtimeError, runtimeInfo } from "./runtimeLogs.js";
 import { withState } from "./store.js";
@@ -78,6 +79,13 @@ interface RunVoiceCampaignOptions {
   batchSize?: number;
   samplePoolSize?: number;
   campaignName?: string;
+}
+
+interface RunVoiceCsvCampaignOptions {
+  csvContent: string;
+  fileName?: string;
+  campaignName?: string;
+  trustImportLeads?: boolean;
 }
 
 const STATE_KEY = "voices_registry";
@@ -703,6 +711,201 @@ export async function runVoiceBatchCampaign(profileId: string, options: RunVoice
     run.summary = "Voices batch campaign failed.";
     run.errors.push(String(error).slice(0, 500));
     runtimeError("scheduler", "voices batch campaign failed", error, {
+      runId: run.id,
+      profileId: profile.id,
+      assistantId: profile.assistantId
+    });
+  } finally {
+    await withVoicesState((row) => {
+      const target = row.runs.find((item) => item.id === run.id);
+      if (target) {
+        Object.assign(target, run);
+      } else {
+        appendRun(row, run);
+      }
+    });
+  }
+
+  return run;
+}
+
+export async function runVoiceCsvCampaign(
+  profileId: string,
+  options: RunVoiceCsvCampaignOptions
+): Promise<VoiceRunLog> {
+  const state = await loadVoicesState();
+  const profile = state.profiles[profileId];
+  if (!profile) {
+    throw new Error(`Voice profile not found: ${profileId}`);
+  }
+  if (!profile.assistantId) {
+    throw new Error("Profile has no assistantId. Spin up or paste an assistant ID first.");
+  }
+
+  const csvContent = String(options.csvContent || "");
+  if (!csvContent.trim()) {
+    throw new Error("csvContent is required");
+  }
+
+  const rows = parseCsvRows(csvContent);
+  const runId = `voices-csv-${Date.now()}-${hashShort(`${Math.random()}`)}`;
+  const campaignName = (options.campaignName || profile.campaignName || `Voices · ${profile.name}`).trim();
+  const sourceFile = `voices-upload-${Date.now()}-${hashShort(options.fileName || runId)}.csv`;
+
+  const run: VoiceRunLog = {
+    id: runId,
+    profileId: profile.id,
+    profileName: profile.name,
+    assistantId: profile.assistantId,
+    trigger: "manual",
+    status: "running",
+    startedAt: nowIso(),
+    fetchedContacts: rows.length,
+    selectedContacts: rows.length,
+    queuedLeads: 0,
+    skippedLeads: 0,
+    ghlNotesLogged: 0,
+    summary: "Voices CSV campaign started.",
+    errors: []
+  };
+
+  await withVoicesState((row) => {
+    appendRun(row, run);
+  });
+
+  try {
+    if (!rows.length) {
+      run.status = "skipped";
+      run.completedAt = nowIso();
+      run.summary = "CSV has no data rows.";
+      return run;
+    }
+
+    const result = await withState((store) => {
+      const activePhones = new Set(
+        Object.values(store.leads)
+          .filter((lead) => lead.status === "queued" || lead.status === "retry" || lead.status === "dialing")
+          .map((lead) => normalizePhone(lead.phone || ""))
+          .filter((value): value is string => Boolean(value))
+      );
+
+      let queued = 0;
+      let skipped = 0;
+      let invalid = 0;
+      let blocked = 0;
+
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i];
+        const built = buildLeadFromCsvRow(row, sourceFile, i + 2, {
+          trustImportLeads: options.trustImportLeads ?? true
+        });
+        if (!built) {
+          invalid += 1;
+          continue;
+        }
+
+        if (activePhones.has(built.phone)) {
+          skipped += 1;
+          continue;
+        }
+
+        const existing = store.leads[built.id];
+        const now = nowIso();
+        const findings = [built.findings, `Queued by Voices profile "${profile.name}"`].filter(Boolean).join(" | ");
+        const notes = [built.notes, `Voices CSV run ${runId}; profile=${profile.id}; assistant=${profile.assistantId}`]
+          .filter(Boolean)
+          .join(" | ");
+
+        if (existing) {
+          existing.firstName = built.firstName || existing.firstName;
+          existing.lastName = built.lastName || existing.lastName;
+          existing.company = built.company || existing.company;
+          existing.email = built.email || existing.email;
+          existing.timezone = built.timezone || existing.timezone;
+          existing.campaign = campaignName;
+          existing.sourceFile = "voices-campaign";
+          existing.sourceRow = i + 2;
+          existing.findings = findings || existing.findings;
+          existing.notes = notes || existing.notes;
+          existing.assistantIdOverride = profile.assistantId;
+          existing.bookingUrlOverride = profile.calendarUrl || existing.bookingUrlOverride;
+          existing.voiceProfileId = profile.id;
+          existing.voiceProfileName = profile.name;
+          existing.optIn = true;
+
+          if (existing.dnc) {
+            existing.status = "blocked";
+            existing.nextAttemptAt = undefined;
+            blocked += 1;
+          } else {
+            existing.status = "queued";
+            existing.attempts = 0;
+            existing.nextAttemptAt = now;
+            existing.lastError = undefined;
+            existing.callId = undefined;
+            existing.callAttemptedAt = undefined;
+            existing.callEndedAt = undefined;
+            existing.outcome = undefined;
+            existing.transcript = undefined;
+            existing.transcriptSummary = undefined;
+            existing.recordingUrl = undefined;
+            queued += 1;
+            activePhones.add(built.phone);
+          }
+
+          existing.updatedAt = now;
+          continue;
+        }
+
+        const lead: Lead = {
+          ...built,
+          campaign: campaignName,
+          sourceFile: "voices-campaign",
+          sourceRow: i + 2,
+          findings: findings || built.findings,
+          notes: notes || built.notes,
+          assistantIdOverride: profile.assistantId,
+          bookingUrlOverride: profile.calendarUrl || undefined,
+          voiceProfileId: profile.id,
+          voiceProfileName: profile.name,
+          optIn: true,
+          dnc: Boolean(built.dnc),
+          status: built.dnc ? "blocked" : "queued",
+          attempts: 0,
+          nextAttemptAt: built.dnc ? undefined : now
+        };
+        store.leads[lead.id] = lead;
+        if (lead.status === "queued") {
+          queued += 1;
+          activePhones.add(lead.phone);
+        } else {
+          blocked += 1;
+        }
+      }
+
+      return { queued, skipped, invalid, blocked };
+    });
+
+    run.queuedLeads = result.queued;
+    run.skippedLeads = result.skipped + result.invalid + result.blocked;
+    run.status = run.queuedLeads > 0 ? "completed" : "skipped";
+    run.completedAt = nowIso();
+    run.summary = `Rows ${rows.length}, queued ${result.queued}, skipped ${result.skipped}, invalid ${result.invalid}, blocked ${result.blocked}.`;
+
+    runtimeInfo("scheduler", "voices csv campaign completed", {
+      runId: run.id,
+      profileId: profile.id,
+      assistantId: profile.assistantId,
+      rows: rows.length,
+      queuedLeads: run.queuedLeads,
+      skippedLeads: run.skippedLeads
+    });
+  } catch (error) {
+    run.status = "error";
+    run.completedAt = nowIso();
+    run.summary = "Voices CSV campaign failed.";
+    run.errors.push(String(error).slice(0, 500));
+    runtimeError("scheduler", "voices csv campaign failed", error, {
       runId: run.id,
       profileId: profile.id,
       assistantId: profile.assistantId

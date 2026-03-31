@@ -99,6 +99,7 @@ import {
   deleteVoiceProfile,
   getVoicesDashboard,
   runVoiceBatchCampaign,
+  runVoiceCsvCampaign,
   spinUpAssistantForProfile,
   upsertVoiceProfile
 } from "./voices.js";
@@ -2010,7 +2011,7 @@ export function createServer() {
   const app = express();
   app.use(
     express.json({
-      limit: "1mb",
+      limit: "10mb",
       verify: (req, _res, buf) => {
         (req as RawBodyRequest).rawBody = buf.toString("utf8");
       }
@@ -2263,6 +2264,28 @@ export function createServer() {
         batchSize: asOptionalInt(body.batchSize, 1, 200),
         samplePoolSize: asOptionalInt(body.samplePoolSize, 50, 2000),
         campaignName: safeString(body.campaignName)
+      });
+      const status = await getVoicesDashboard();
+      res.json({ ok: true, run, status });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.post("/api/voices/profile/:id/upload-run", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const csvContent = typeof body.csvContent === "string" ? body.csvContent : "";
+    if (!csvContent.trim()) {
+      res.status(400).json({ ok: false, error: "csvContent is required" });
+      return;
+    }
+
+    try {
+      const run = await runVoiceCsvCampaign(req.params.id, {
+        csvContent,
+        fileName: safeString(body.fileName),
+        campaignName: safeString(body.campaignName),
+        trustImportLeads: asOptionalBool(body.trustImportLeads)
       });
       const status = await getVoicesDashboard();
       res.json({ ok: true, run, status });

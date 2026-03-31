@@ -35,7 +35,7 @@ const aliases = {
   optIn: ["opt_in", "optin", "consent", "permission", "warm_lead", "opted_in", "permission_to_contact"]
 } as const;
 
-type CsvRow = Record<string, unknown>;
+export type CsvRow = Record<string, unknown>;
 interface IngestOptions {
   trustImportLeads?: boolean;
 }
@@ -131,7 +131,12 @@ function splitPersonalName(fullName?: string): { firstName?: string; lastName?: 
   };
 }
 
-function buildLead(row: CsvRow, sourceFile: string, sourceRow: number, options?: IngestOptions): Lead | undefined {
+export function buildLeadFromCsvRow(
+  row: CsvRow,
+  sourceFile: string,
+  sourceRow: number,
+  options?: IngestOptions
+): Lead | undefined {
   const phone = normalizePhone(
     firstDefined(
       pick(row, aliases.phone),
@@ -333,7 +338,7 @@ async function archiveFile(filePath: string): Promise<void> {
   await fs.rename(filePath, destination);
 }
 
-function parseRows(csvRaw: string): CsvRow[] {
+export function parseCsvRows(csvRaw: string): CsvRow[] {
   return parse(csvRaw, {
     columns: true,
     skip_empty_lines: true,
@@ -350,7 +355,7 @@ export async function ingestOnce(options?: IngestOptions): Promise<IngestSummary
   for (const file of files) {
     const sourceFile = path.basename(file);
     const csvRaw = await fs.readFile(file, "utf8");
-    const rows = parseRows(csvRaw);
+    const rows = parseCsvRows(csvRaw);
 
     const summary: IngestSummary = {
       file: sourceFile,
@@ -368,7 +373,7 @@ export async function ingestOnce(options?: IngestOptions): Promise<IngestSummary
       }
 
       for (let i = 0; i < rows.length; i += 1) {
-        const lead = buildLead(rows[i], sourceFile, i + 2, options);
+        const lead = buildLeadFromCsvRow(rows[i], sourceFile, i + 2, options);
         if (!lead) {
           summary.invalid += 1;
           continue;
