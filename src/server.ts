@@ -58,7 +58,12 @@ import {
 } from "./agentTemplates.js";
 import { TOOL_CATALOG } from "./toolCatalog.js";
 import { loadTemplateState, withTemplateState } from "./templateStore.js";
-import { getDialerCooldownRemainingMs, resetStuckDialingLeads, setDialerPostCallCooldown } from "./worker.js";
+import {
+  dispatchDialerBurst,
+  getDialerCooldownRemainingMs,
+  resetStuckDialingLeads,
+  setDialerPostCallCooldown
+} from "./worker.js";
 import {
   canSendWinSms,
   fetchTwilioMessageBySid,
@@ -2143,6 +2148,31 @@ export function createServer() {
     const minAgeSeconds = asOptionalInt(body.minAgeSeconds, 30, 86_400) || config.reconcileMinAgeSeconds;
     const limit = asOptionalInt(body.limit, 1, 1000) || 200;
     const result = await reconcileDialingCalls({ minAgeSeconds, limit, source: "manual-api" });
+    res.json({ ok: true, result });
+  });
+
+  app.post("/api/dialer/start", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const maxDispatch = asOptionalInt(body.maxDispatch, 1, 200) || 25;
+    const ignoreCallingWindow = asBool(body.ignoreCallingWindow, true);
+    const ignoreCooldown = asBool(body.ignoreCooldown, false);
+    const voiceProfileId = safeString(body.voiceProfileId);
+
+    const result = await dispatchDialerBurst({
+      maxDispatch,
+      ignoreCallingWindow,
+      ignoreCooldown,
+      voiceProfileId
+    });
+    runtimeInfo("dialer", "manual campaign start requested", {
+      maxDispatch,
+      ignoreCallingWindow,
+      ignoreCooldown,
+      voiceProfileId: voiceProfileId || "",
+      dispatched: result.dispatched,
+      idle: result.idle
+    });
+
     res.json({ ok: true, result });
   });
 

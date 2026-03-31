@@ -12,6 +12,13 @@ const ACTIVE_QUEUE: LeadStatus[] = ["queued", "retry"];
 let dialerCooldownUntil = 0;
 let lastCreditGuardLogKey = "";
 
+export interface DialOptions {
+  ignoreCallingWindow?: boolean;
+  ignoreCooldown?: boolean;
+  ignoreCreditGuard?: boolean;
+  voiceProfileId?: string;
+}
+
 export function setDialerPostCallCooldown(delayMs: number): void {
   const ms = Math.max(0, Math.trunc(delayMs));
   if (ms <= 0) return;
@@ -111,16 +118,19 @@ function computeBackoffMs(attempt: number): number {
   return capped * 1000 + randomInt(0, 750);
 }
 
-function isEligible(lead: Lead, now: Date): boolean {
+function isEligible(lead: Lead, now: Date, options?: DialOptions): boolean {
   if (!ACTIVE_QUEUE.includes(lead.status)) return false;
   if (lead.attempts >= config.maxAttempts) return false;
   if (lead.dnc) return false;
   if (lead.sourceFile === 'prospector-dashboard' && !lead.prospectAutoDialApproved) return false;
+  if (options?.voiceProfileId && lead.voiceProfileId !== options.voiceProfileId) return false;
 
   if (lead.nextAttemptAt) {
     const dueAt = Date.parse(lead.nextAttemptAt);
     if (Number.isFinite(dueAt) && dueAt > now.getTime()) return false;
   }
+
+  if (options?.ignoreCallingWindow) return true;
 
   return isWithinCallingWindow(
     now,
@@ -130,38 +140,40 @@ function isEligible(lead: Lead, now: Date): boolean {
   );
 }
 
-async function reserveLead(): Promise<Lead | undefined> {
-  const creditStatus = await getVapiCreditGuardStatus();
-  const creditLogKey = `${creditStatus.stopDialing}|${creditStatus.fetchOk}|${creditStatus.availableCredits ?? "na"}|${creditStatus.reason}`;
-  if (creditLogKey !== lastCreditGuardLogKey) {
-    lastCreditGuardLogKey = creditLogKey;
+async function reserveLead(options?: DialOptions): Promise<Lead | undefined> {
+  if (!options?.ignoreCreditGuard) {
+    const creditStatus = await getVapiCreditGuardStatus();
+    const creditLogKey = `${creditStatus.stopDialing}|${creditStatus.fetchOk}|${creditStatus.availableCredits ?? "na"}|${creditStatus.reason}`;
+    if (creditLogKey !== lastCreditGuardLogKey) {
+      lastCreditGuardLogKey = creditLogKey;
+      if (creditStatus.stopDialing) {
+        runtimeInfo("dialer", "dialer paused due low Vapi credits", {
+          availableCredits: creditStatus.availableCredits,
+          minCredits: creditStatus.minCredits,
+          checkedAt: creditStatus.checkedAt,
+          sourceEndpoint: creditStatus.sourceEndpoint || ""
+        });
+      } else if (!creditStatus.fetchOk) {
+        runtimeInfo("dialer", "Vapi credit check unavailable; continuing dialer", {
+          reason: creditStatus.reason,
+          checkedAt: creditStatus.checkedAt
+        });
+      } else {
+        runtimeInfo("dialer", "Vapi credit guard check passed", {
+          availableCredits: creditStatus.availableCredits,
+          minCredits: creditStatus.minCredits,
+          checkedAt: creditStatus.checkedAt,
+          sourceEndpoint: creditStatus.sourceEndpoint || ""
+        });
+      }
+    }
+
     if (creditStatus.stopDialing) {
-      runtimeInfo("dialer", "dialer paused due low Vapi credits", {
-        availableCredits: creditStatus.availableCredits,
-        minCredits: creditStatus.minCredits,
-        checkedAt: creditStatus.checkedAt,
-        sourceEndpoint: creditStatus.sourceEndpoint || ""
-      });
-    } else if (!creditStatus.fetchOk) {
-      runtimeInfo("dialer", "Vapi credit check unavailable; continuing dialer", {
-        reason: creditStatus.reason,
-        checkedAt: creditStatus.checkedAt
-      });
-    } else {
-      runtimeInfo("dialer", "Vapi credit guard check passed", {
-        availableCredits: creditStatus.availableCredits,
-        minCredits: creditStatus.minCredits,
-        checkedAt: creditStatus.checkedAt,
-        sourceEndpoint: creditStatus.sourceEndpoint || ""
-      });
+      return undefined;
     }
   }
 
-  if (creditStatus.stopDialing) {
-    return undefined;
-  }
-
-  if (Date.now() < dialerCooldownUntil) {
+  if (!options?.ignoreCooldown && Date.now() < dialerCooldownUntil) {
     return undefined;
   }
 
@@ -169,7 +181,7 @@ async function reserveLead(): Promise<Lead | undefined> {
 
   return withState((state) => {
     const candidates = Object.values(state.leads)
-      .filter((lead) => isEligible(lead, now))
+      .filter((lead) => isEligible(lead, now, options))
       .sort((a, b) => {
         const aDue = a.nextAttemptAt ? Date.parse(a.nextAttemptAt) : 0;
         const bDue = b.nextAttemptAt ? Date.parse(b.nextAttemptAt) : 0;
@@ -238,8 +250,8 @@ async function markFailure(leadId: string, message: string, retryable: boolean):
   });
 }
 
-export async function dialOneLead(): Promise<{ dispatched: boolean; message: string }> {
-  const lead = await reserveLead();
+export async function dialOneLead(options?: DialOptions): Promise<{ dispatched: boolean; message: string }> {
+  const lead = await reserveLead(options);
   if (!lead) {
     return { dispatched: false, message: "No eligible leads" };
   }
@@ -308,4 +320,31 @@ export async function dialOneLead(): Promise<{ dispatched: boolean; message: str
     });
     return { dispatched: true, message: `Lead ${lead.id} failed with unknown error` };
   }
+}
+
+export async function dispatchDialerBurst(
+  input?: DialOptions & { maxDispatch?: number }
+): Promise<{ requested: number; dispatched: number; idle: number; messages: string[] }> {
+  const requested = Math.max(1, Math.min(200, Math.trunc(input?.maxDispatch || 25)));
+  const messages: string[] = [];
+  let dispatched = 0;
+  let idle = 0;
+
+  for (let i = 0; i < requested; i += 1) {
+    const result = await dialOneLead({
+      ignoreCallingWindow: input?.ignoreCallingWindow,
+      ignoreCooldown: input?.ignoreCooldown,
+      ignoreCreditGuard: input?.ignoreCreditGuard,
+      voiceProfileId: input?.voiceProfileId
+    });
+    messages.push(result.message);
+    if (result.dispatched) {
+      dispatched += 1;
+      continue;
+    }
+    idle += 1;
+    break;
+  }
+
+  return { requested, dispatched, idle, messages };
 }
