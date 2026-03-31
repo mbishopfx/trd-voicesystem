@@ -550,6 +550,7 @@
               <button id="prospectorStartBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Phase 1 Gather</button>
               <button id="prospectorGenerateBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Phase 2 Build + Deploy</button>
               <button id="prospectorPhase3Btn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Phase 3 Link + Sync</button>
+              <button id="prospectorGhlSyncBtn" class="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-emerald-700">Sync Scraped Leads To GHL</button>
               <button id="prospectorPhase4Btn" class="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-indigo-700">Phase 4 Script</button>
               <button id="prospectorPhase5Btn" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-700">Phase 5 Specialized Call</button>
               <button id="prospectorPipelineBtn" class="rounded-xl border border-slate-400 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-700">Run Full Pipeline</button>
@@ -2106,10 +2107,26 @@
 
         document.getElementById("prospectorPhase3Btn").addEventListener("click", async () => {
           try {
-            const data = await postJson("/api/prospector/phase3", { limit: prospectorLimitValue() });
+            const data = await postJson("/api/prospector/phase3", { limit: prospectorLimitValue(), forceGhlSync: true });
             await refreshProspectorRuns();
             await refreshLeads();
             showToast(`Phase 3 complete. organized=${data.result?.organized || 0}, ghlSynced=${data.result?.ghlSynced || 0}`);
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorGhlSyncBtn").addEventListener("click", async () => {
+          try {
+            const data = await postJson("/api/prospector/sync-ghl", {
+              limit: Math.max(prospectorLimitValue(), 50),
+              onlyWithoutGhlContact: true
+            });
+            await refreshProspectorRuns();
+            await refreshLeads();
+            showToast(
+              `GHL sync complete. imported=${data.result?.imported || 0}, failed=${data.result?.failed || 0}, skipped=${data.result?.skipped || 0}`
+            );
           } catch (error) {
             showToast(String(error), true);
           }

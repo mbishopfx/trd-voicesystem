@@ -21,6 +21,7 @@ import { createProspectVisionTemplate } from "./prospectTemplate.js";
 import { createTonyDemoTemplate } from "./tonyDemoTemplate.js";
 import { deployGeneratedProspects } from "./deploy.js";
 import {
+  importProspectorLeadsToGhl,
   runProspectorPhase2,
   runProspectorPhase3,
   runProspectorPhase4,
@@ -2756,11 +2757,24 @@ export function createServer() {
   app.post("/api/prospector/phase3", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
     const limit = asOptionalInt(body.limit, 1, 500) || 100;
+    const forceGhlSync = asBool(body.forceGhlSync, false);
     try {
-      const result = await runProspectorPhase3(limit);
+      const result = await runProspectorPhase3({ limit, forceGhlSync });
       res.json({ ok: true, phase: 3, result });
     } catch (error) {
       res.status(500).json({ ok: false, phase: 3, error: String(error) });
+    }
+  });
+
+  app.post("/api/prospector/sync-ghl", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const limit = asOptionalInt(body.limit, 1, 1000) || 200;
+    const onlyWithoutGhlContact = body.onlyWithoutGhlContact === undefined ? true : asBool(body.onlyWithoutGhlContact, true);
+    try {
+      const result = await importProspectorLeadsToGhl({ limit, onlyWithoutGhlContact });
+      res.json({ ok: true, result });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
     }
   });
 

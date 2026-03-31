@@ -34,6 +34,11 @@ export interface ProspectorPipelineResult {
   errors?: Array<{ phase: 1 | 2 | 3 | 4 | 5; error: string }>;
 }
 
+export interface ProspectorPhase3Options {
+  limit?: number;
+  forceGhlSync?: boolean;
+}
+
 function appendNote(base: string | undefined, message: string): string {
   const current = (base || "").trim();
   if (!current) return message;
@@ -178,7 +183,11 @@ export async function runProspectorPhase2(
   };
 }
 
-export async function runProspectorPhase3(limit = 50): Promise<{ organized: number; ghlSynced: number; skipped: number }> {
+export async function runProspectorPhase3(input: number | ProspectorPhase3Options = 50): Promise<{ organized: number; ghlSynced: number; skipped: number }> {
+  const options: ProspectorPhase3Options =
+    typeof input === "number" ? { limit: input } : input || {};
+  const limit = Math.max(1, Math.min(500, Math.trunc(options.limit || 50)));
+  const forceGhlSync = Boolean(options.forceGhlSync);
   const leads = await listProspectorLeads(limit, (lead) => Boolean(lead.deployedSiteUrl));
   let organized = 0;
   let ghlSynced = 0;
@@ -187,7 +196,7 @@ export async function runProspectorPhase3(limit = 50): Promise<{ organized: numb
   for (const lead of leads) {
     let ghlContactId: string | undefined;
     let ghlSyncError: string | undefined;
-    if (config.prospectorGhlAutoSync) {
+    if (config.prospectorGhlAutoSync || forceGhlSync) {
       const synced = await syncProspectorContactToGhl({
         lead,
         deployedSiteUrl: lead.deployedSiteUrl,
@@ -233,12 +242,92 @@ export async function runProspectorPhase3(limit = 50): Promise<{ organized: numb
       ghlContactId,
       payload: {
         autoGhlSync: config.prospectorGhlAutoSync,
+        forceGhlSync,
         ghlSyncError: ghlSyncError || ""
       }
     });
   }
 
   return { organized, ghlSynced, skipped };
+}
+
+export async function importProspectorLeadsToGhl(
+  input: { limit?: number; onlyWithoutGhlContact?: boolean } = {}
+): Promise<{ scanned: number; imported: number; failed: number; skipped: number }> {
+  const limit = Math.max(1, Math.min(1000, Math.trunc(input.limit || 200)));
+  const onlyWithoutGhlContact = input.onlyWithoutGhlContact !== false;
+  const leads = await listProspectorLeads(limit, () => true);
+
+  let scanned = 0;
+  let imported = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const lead of leads) {
+    scanned += 1;
+    const hasGhlContact = Boolean(lead.ghlContactId || lead.prospectorGhlContactId);
+    if (onlyWithoutGhlContact && hasGhlContact) {
+      skipped += 1;
+      continue;
+    }
+
+    const synced = await syncProspectorContactToGhl({
+      lead,
+      deployedSiteUrl: lead.deployedSiteUrl,
+      generatedSitePath: lead.generatedSitePath
+    });
+
+    if (synced.synced && synced.contactId) {
+      imported += 1;
+      await withState((state) => {
+        const row = state.leads[lead.id];
+        if (!row) return;
+        row.ghlContactId = synced.contactId;
+        row.prospectorGhlContactId = synced.contactId;
+        row.ghlSyncedAt = nowIso();
+        row.prospectorGhlSyncedAt = row.ghlSyncedAt;
+        row.ghlLastError = undefined;
+        row.updatedAt = nowIso();
+      });
+      await safeAppendRecord({
+        leadId: lead.id,
+        phase: 3,
+        status: "success",
+        message: "Prospector lead imported to GHL",
+        company: lead.company,
+        deployedSiteUrl: lead.deployedSiteUrl,
+        generatedSitePath: lead.generatedSitePath,
+        ghlContactId: synced.contactId,
+        payload: {
+          mode: "manual_ghl_import"
+        }
+      });
+      continue;
+    }
+
+    failed += 1;
+    await withState((state) => {
+      const row = state.leads[lead.id];
+      if (!row) return;
+      row.ghlLastError = synced.error || "Unknown GHL import error";
+      row.updatedAt = nowIso();
+    });
+    await safeAppendRecord({
+      leadId: lead.id,
+      phase: 3,
+      status: "error",
+      message: "Prospector lead import to GHL failed",
+      company: lead.company,
+      deployedSiteUrl: lead.deployedSiteUrl,
+      generatedSitePath: lead.generatedSitePath,
+      payload: {
+        mode: "manual_ghl_import",
+        error: synced.error || "Unknown GHL import error"
+      }
+    });
+  }
+
+  return { scanned, imported, failed, skipped };
 }
 
 export async function runProspectorPhase4(limit = 50): Promise<{ scripted: number; skipped: number }> {
