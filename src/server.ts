@@ -115,6 +115,7 @@ import {
   spinUpAssistantForProfile,
   upsertVoiceProfile
 } from "./voices.js";
+import { getSmsCampaignDashboard, runSmsCsvCampaign } from "./smsCampaigns.js";
 
 type RawBodyRequest = Request & { rawBody?: string };
 let reconcileLoopStarted = false;
@@ -3642,9 +3643,21 @@ export function createServer() {
       return;
     }
     const limit = asOptionalInt(req.query.limit, 10, 400) || 200;
-    const messages = await listTwilioMessages({ pageSize: 100 });
+    const [toMessages, fromMessages] = await Promise.all([
+      listTwilioMessages({ to: requestedPhone, pageSize: 100 }),
+      listTwilioMessages({ from: requestedPhone, pageSize: 100 })
+    ]);
+    const messages = [...toMessages, ...fromMessages];
+    const seenSid = new Set<string>();
     const twilioNumber = normalizePhone(config.twilioPhoneNumber || "") || "";
     const rows = messages
+      .filter((row) => {
+        const sid = safeString(row.sid);
+        if (!sid) return true;
+        if (seenSid.has(sid)) return false;
+        seenSid.add(sid);
+        return true;
+      })
       .map((row) => {
         const from = safeString(row.from) || "";
         const to = safeString(row.to) || "";
@@ -3713,6 +3726,34 @@ export function createServer() {
       sid: sent.sid,
       status: sent.status
     });
+  });
+
+  app.get("/api/sms/campaign/status", async (_req: Request, res: Response) => {
+    const status = await getSmsCampaignDashboard();
+    res.json({ ok: true, ...status });
+  });
+
+  app.post("/api/sms/campaign/upload-run", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const csvContent = typeof body.csvContent === "string" ? body.csvContent : "";
+    if (!csvContent.trim()) {
+      res.status(400).json({ ok: false, error: "csvContent is required" });
+      return;
+    }
+
+    try {
+      const run = await runSmsCsvCampaign({
+        csvContent,
+        fileName: safeString(body.fileName),
+        campaignName: safeString(body.campaignName),
+        template: safeString(body.template),
+        trustImportLeads: asOptionalBool(body.trustImportLeads)
+      });
+      const status = await getSmsCampaignDashboard();
+      res.json({ ok: true, run, status });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
   });
 
   app.get("/api/retarget/summary", async (_req: Request, res: Response) => {

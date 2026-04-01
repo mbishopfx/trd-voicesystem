@@ -73,6 +73,8 @@ export const config = {
   inboundLockPath: path.resolve(cwd, "data", "state", "inbound.lock"),
   voicesStatePath: path.resolve(cwd, "data", "state", "voices.json"),
   voicesLockPath: path.resolve(cwd, "data", "state", "voices.lock"),
+  smsCampaignStatePath: path.resolve(cwd, "data", "state", "sms-campaigns.json"),
+  smsCampaignLockPath: path.resolve(cwd, "data", "state", "sms-campaigns.lock"),
   bulkSchedulerStatePath: path.resolve(cwd, "data", "state", "bulk-scheduler.json"),
   bulkSchedulerLockPath: path.resolve(cwd, "data", "state", "bulk-scheduler.lock"),
   generatedSitesDir: path.resolve(cwd, "data", "generated-sites"),
@@ -204,6 +206,9 @@ export const config = {
   prospectorWinSmsTemplate:
     process.env.PROSPECTOR_WIN_SMS_TEMPLATE?.trim() ||
     "Hi {{firstName}}, here is the live vision link: {{liveLink}}. If you want to move forward, book here: {{bookingUrl}}. A team member may reach out before the meeting.",
+  smsCampaignDefaultTemplate:
+    process.env.SMS_CAMPAIGN_DEFAULT_TEMPLATE?.trim() ||
+    "Hi {{firstName}}, this is True Rank Digital. We found a few AI search visibility fixes for {{company}}. Want the quick breakdown?",
   ghlSyncOnCallAttempt: asBool("GHL_SYNC_ON_CALL_ATTEMPT", false),
   prospectorGhlAutoSync: asBool("PROSPECTOR_GHL_AUTO_SYNC", true),
   retargetAutoExport: asBool("RETARGET_AUTO_EXPORT", true)

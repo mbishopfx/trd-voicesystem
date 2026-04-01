@@ -959,6 +959,51 @@
               </div>
             </div>
           </section>
+
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 class="font-headline text-lg font-extrabold text-on-surface">SMS-Only CSV Campaign</h3>
+                <p class="text-sm text-outline">Upload CSV, map variables automatically, and launch direct SMS outreach.</p>
+              </div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">CSV File
+                <input id="smsCampaignCsvFile" type="file" accept=".csv,text/csv" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-xs file:font-semibold" />
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Campaign Name
+                <input id="smsCampaignName" type="text" value="SMS CSV Campaign" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+            </div>
+            <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">SMS Template
+              <textarea id="smsCampaignTemplate" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">Hi {{firstName}}, this is True Rank Digital. We found a few AI search visibility fixes for {{company}}. Want the quick breakdown?</textarea>
+            </label>
+            <p class="mt-2 text-xs text-outline">Variables auto-map from CSV headers and aliases: <code>{{firstName}}</code>, <code>{{lastName}}</code>, <code>{{company}}</code>, <code>{{phone}}</code>, <code>{{email}}</code>, and normalized headers like <code>{{business_name}}</code>.</p>
+            <div class="mt-4 flex justify-end">
+              <button id="smsCampaignRunBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Run SMS Campaign</button>
+            </div>
+          </section>
+
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <h3 class="font-headline text-lg font-extrabold text-on-surface">SMS Campaign Runs</h3>
+            <div class="mt-4 overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-surface-container-low/40">
+                  <tr>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Run</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Campaign</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Sent</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Failed / Skipped</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Started</th>
+                  </tr>
+                </thead>
+                <tbody id="smsCampaignRunsRows" class="divide-y divide-outline-variant/10">
+                  <tr><td colspan="6" class="px-4 py-4 text-sm text-outline">No SMS campaign runs yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
         </section>
 
         <section id="page-settings" data-page="settings" class="hidden space-y-6">
@@ -996,8 +1041,10 @@
           fetchedAt: "",
           threads: [],
           messages: [],
-          selectedPhone: ""
+          selectedPhone: "",
+          threadMessages: {}
         },
+        smsCampaignStatus: null,
         routeHealth: {
           healthy: false,
           checks: [],
@@ -1312,6 +1359,18 @@
         return String(state.smsInbox?.selectedPhone || "").trim();
       }
 
+      function groupedInboxMessages(messages) {
+        const out = {};
+        const rows = Array.isArray(messages) ? messages : [];
+        for (const row of rows) {
+          const phone = String(row?.counterparty || "").trim();
+          if (!phone) continue;
+          if (!Array.isArray(out[phone])) out[phone] = [];
+          out[phone].push(row);
+        }
+        return out;
+      }
+
       function renderSmsInboxStatus(message) {
         const root = document.getElementById("smsInboxStatus");
         if (!root) return;
@@ -1332,8 +1391,9 @@
           .map((thread) => {
             const phone = String(thread.phone || "");
             const active = phone === selected;
+            const encodedPhone = encodeURIComponent(phone);
             const when = thread.latestAt ? new Date(thread.latestAt).toLocaleString() : "--";
-            return `<button data-sms-phone="${escapeHtml(phone)}" class="w-full rounded-xl border p-3 text-left transition-all ${
+            return `<button type="button" data-sms-phone="${escapeHtml(encodedPhone)}" class="w-full rounded-xl border p-3 text-left transition-all ${
               active
                 ? "border-teal-300 bg-teal-50/70"
                 : "border-outline-variant/20 bg-white hover:border-teal-200"
@@ -1357,8 +1417,8 @@
 
         const selected = selectedSmsThreadPhone();
         const twilioNumber = String(state.smsInbox?.twilioNumber || "");
-        const rows = (state.smsInbox?.messages || [])
-          .filter((row) => String(row.counterparty || "") === selected)
+        const threadRows = state.smsInbox?.threadMessages?.[selected] || [];
+        const rows = threadRows
           .slice()
           .sort((a, b) => {
             const aTs = Date.parse(a.dateSent || a.dateCreated || a.dateUpdated || "");
@@ -1403,6 +1463,22 @@
         body.scrollTop = body.scrollHeight;
       }
 
+      async function loadSmsThread(phone, silent = false) {
+        const selected = String(phone || "").trim();
+        if (!selected) return;
+        try {
+          const data = await getJson(`/api/sms/thread/${encodeURIComponent(selected)}?limit=300`);
+          state.smsInbox.threadMessages[selected] = Array.isArray(data.messages) ? data.messages : [];
+          if (selectedSmsThreadPhone() === selected) {
+            renderSmsConversation();
+          }
+        } catch (error) {
+          if (!silent) {
+            showToast(`Failed to load thread ${selected}: ${String(error)}`, true);
+          }
+        }
+      }
+
       async function refreshSmsInbox(silent = false) {
         try {
           const data = await getJson("/api/sms/inbox?limit=200");
@@ -1411,6 +1487,7 @@
           state.smsInbox.fetchedAt = data.fetchedAt || "";
           state.smsInbox.threads = data.threads || [];
           state.smsInbox.messages = data.messages || [];
+          state.smsInbox.threadMessages = groupedInboxMessages(state.smsInbox.messages);
           if (selectedBefore && (state.smsInbox.threads || []).some((row) => row.phone === selectedBefore)) {
             state.smsInbox.selectedPhone = selectedBefore;
           } else {
@@ -1420,10 +1497,14 @@
           renderSmsInboxStatus(`Showing ${fmtNum((data.threads || []).length)} conversations · Updated ${refreshedAt}`);
           renderSmsThreads();
           renderSmsConversation();
+          if (state.smsInbox.selectedPhone) {
+            await loadSmsThread(state.smsInbox.selectedPhone, true);
+          }
         } catch (error) {
           state.smsInbox.threads = [];
           state.smsInbox.messages = [];
           state.smsInbox.selectedPhone = "";
+          state.smsInbox.threadMessages = {};
           renderSmsThreads();
           renderSmsConversation();
           renderSmsInboxStatus(`Inbox unavailable: ${String(error)}`);
@@ -1448,7 +1529,68 @@
         const sent = await postJson("/api/sms/reply", { to, body });
         input.value = "";
         await refreshSmsInbox(true);
+        await loadSmsThread(to, true);
         showToast(`Reply sent to ${to}. sid=${sent.sid || "--"}`);
+      }
+
+      function renderSmsCampaignRuns(runs) {
+        const root = document.getElementById("smsCampaignRunsRows");
+        if (!root) return;
+        if (!Array.isArray(runs) || runs.length === 0) {
+          root.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-sm text-outline">No SMS campaign runs yet.</td></tr>`;
+          return;
+        }
+
+        root.innerHTML = runs
+          .slice(0, 50)
+          .map((run) => `<tr>
+            <td class="px-4 py-3 text-xs">${escapeHtml(run.id || "--")}</td>
+            <td class="px-4 py-3">${escapeHtml(run.campaignName || "--")}</td>
+            <td class="px-4 py-3">${escapeHtml(run.status || "--")}</td>
+            <td class="px-4 py-3">${escapeHtml(String(run.sentCount || 0))}</td>
+            <td class="px-4 py-3">${escapeHtml(String(run.failedCount || 0))} / ${escapeHtml(String(run.skippedCount || 0))}</td>
+            <td class="px-4 py-3 text-xs">${escapeHtml(run.startedAt ? new Date(run.startedAt).toLocaleString() : "--")}</td>
+          </tr>`)
+          .join("");
+      }
+
+      async function refreshSmsCampaignStatus() {
+        const data = await getJson("/api/sms/campaign/status");
+        state.smsCampaignStatus = data;
+        renderSmsCampaignRuns(data.runs || []);
+
+        const templateInput = document.getElementById("smsCampaignTemplate");
+        if (templateInput instanceof HTMLTextAreaElement && !templateInput.value.trim()) {
+          templateInput.value = String(data.defaultTemplate || "");
+        }
+      }
+
+      async function runSmsCsvCampaignFromUi() {
+        const fileInput = document.getElementById("smsCampaignCsvFile");
+        if (!(fileInput instanceof HTMLInputElement) || !fileInput.files || fileInput.files.length === 0) {
+          throw new Error("Choose a CSV file first.");
+        }
+        const file = fileInput.files[0];
+        const csvContent = await readFile(file);
+        const template =
+          document.getElementById("smsCampaignTemplate") instanceof HTMLTextAreaElement
+            ? document.getElementById("smsCampaignTemplate").value.trim()
+            : "";
+        if (!template) {
+          throw new Error("SMS template is required.");
+        }
+
+        const campaignName = document.getElementById("smsCampaignName")?.value?.trim() || undefined;
+        const data = await postJson("/api/sms/campaign/upload-run", {
+          fileName: file.name,
+          csvContent,
+          campaignName,
+          template,
+          trustImportLeads: true
+        });
+
+        await Promise.all([refreshSmsCampaignStatus(), refreshSmsInbox(true)]);
+        showToast(data?.run?.summary || "SMS campaign run completed.");
       }
 
       function artifactLookupValue() {
@@ -1785,7 +1927,7 @@
           refreshAnalytics().catch(() => {});
         }
         if (tab === "sms-inbox") {
-          refreshSmsInbox(true).catch(() => {});
+          Promise.all([refreshSmsInbox(true), refreshSmsCampaignStatus()]).catch(() => {});
         }
       }
 
@@ -2657,11 +2799,13 @@
           if (!(target instanceof HTMLElement)) return;
           const button = target.closest("[data-sms-phone]");
           if (!(button instanceof HTMLElement)) return;
-          const phone = button.getAttribute("data-sms-phone") || "";
-          if (!phone) return;
-          state.smsInbox.selectedPhone = phone;
+          const phoneEncoded = button.getAttribute("data-sms-phone") || "";
+          if (!phoneEncoded) return;
+          const phone = decodeURIComponent(phoneEncoded);
+          state.smsInbox.selectedPhone = String(phone || "").trim();
           renderSmsThreads();
           renderSmsConversation();
+          loadSmsThread(phone, true).catch(() => {});
         });
 
         document.getElementById("smsReplyBtn")?.addEventListener("click", async () => {
@@ -2669,6 +2813,18 @@
             await sendSmsReplyFromInbox();
           } catch (error) {
             showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("smsCampaignRunBtn")?.addEventListener("click", async () => {
+          const runBtn = document.getElementById("smsCampaignRunBtn");
+          if (runBtn instanceof HTMLButtonElement) runBtn.disabled = true;
+          try {
+            await runSmsCsvCampaignFromUi();
+          } catch (error) {
+            showToast(String(error), true);
+          } finally {
+            if (runBtn instanceof HTMLButtonElement) runBtn.disabled = false;
           }
         });
 
@@ -2731,6 +2887,7 @@
           refreshVoices(),
           refreshAnalytics(),
           refreshSmsInbox(true),
+          refreshSmsCampaignStatus(),
           refreshSettings(),
           refreshRouteHealth()
         ]);
@@ -2743,7 +2900,10 @@
           if (state.activeTab === "scheduler") refreshScheduler().catch(() => {});
           if (state.activeTab === "voices") refreshVoices().catch(() => {});
           if (state.activeTab === "prospector") refreshProspectorRuns().catch(() => {});
-          if (state.activeTab === "sms-inbox") refreshSmsInbox(true).catch(() => {});
+          if (state.activeTab === "sms-inbox") {
+            refreshSmsInbox(true).catch(() => {});
+            refreshSmsCampaignStatus().catch(() => {});
+          }
         }, 15000);
         setInterval(() => {
           if (state.activeTab === "analytics") refreshAnalytics().catch(() => {});
