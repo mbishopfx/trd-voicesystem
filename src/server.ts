@@ -3540,6 +3540,181 @@ export function createServer() {
     });
   });
 
+  app.get("/api/sms/inbox", async (req: Request, res: Response) => {
+    if (!isTwilioSmsConfigured()) {
+      res.status(400).json({ ok: false, error: "Twilio SMS is not configured" });
+      return;
+    }
+
+    const limit = asOptionalInt(req.query.limit, 10, 400) || 150;
+    const pageSize = Math.max(20, Math.min(100, limit));
+    const twilioNumber = normalizePhone(config.twilioPhoneNumber || "") || "";
+
+    const messages = await listTwilioMessages({ pageSize });
+    const normalized = messages
+      .map((row) => {
+        const from = safeString(row.from) || "";
+        const to = safeString(row.to) || "";
+        const fromNormalized = normalizePhone(from) || from;
+        const toNormalized = normalizePhone(to) || to;
+        const direction = safeString(row.direction)?.toLowerCase() || "";
+        const inbound =
+          direction.includes("inbound") || (Boolean(twilioNumber) && toNormalized === twilioNumber && fromNormalized !== twilioNumber);
+        const counterparty = inbound ? fromNormalized : toNormalized;
+        const timestampRaw = row.dateSent || row.dateCreated || row.dateUpdated || "";
+        const timestampMs = Date.parse(timestampRaw);
+        return {
+          sid: row.sid,
+          status: row.status,
+          body: row.body,
+          direction: row.direction,
+          inbound,
+          from,
+          to,
+          fromNormalized,
+          toNormalized,
+          counterparty,
+          dateCreated: row.dateCreated,
+          dateSent: row.dateSent,
+          dateUpdated: row.dateUpdated,
+          timestampMs: Number.isFinite(timestampMs) ? timestampMs : 0
+        };
+      })
+      .filter((row) => Boolean(row.counterparty))
+      .sort((a, b) => b.timestampMs - a.timestampMs)
+      .slice(0, limit);
+
+    const threadMap = new Map<
+      string,
+      {
+        phone: string;
+        latestAt?: string;
+        latestDirection?: string;
+        latestBody?: string;
+        latestStatus?: string;
+        messageCount: number;
+        inboundCount: number;
+      }
+    >();
+
+    for (const row of normalized) {
+      const key = row.counterparty;
+      if (!threadMap.has(key)) {
+        threadMap.set(key, {
+          phone: key,
+          latestAt: row.dateSent || row.dateCreated || row.dateUpdated,
+          latestDirection: row.direction,
+          latestBody: row.body,
+          latestStatus: row.status,
+          messageCount: 0,
+          inboundCount: 0
+        });
+      }
+      const thread = threadMap.get(key);
+      if (!thread) continue;
+      thread.messageCount += 1;
+      if (row.inbound) thread.inboundCount += 1;
+    }
+
+    const threads = Array.from(threadMap.values()).sort((a, b) => {
+      const aTs = Date.parse(a.latestAt || "");
+      const bTs = Date.parse(b.latestAt || "");
+      return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
+    });
+
+    res.json({
+      ok: true,
+      twilioNumber,
+      threads,
+      messages: normalized,
+      fetchedAt: nowIso()
+    });
+  });
+
+  app.get("/api/sms/thread/:phone", async (req: Request, res: Response) => {
+    if (!isTwilioSmsConfigured()) {
+      res.status(400).json({ ok: false, error: "Twilio SMS is not configured" });
+      return;
+    }
+    const requestedPhone = normalizePhone(req.params.phone || "");
+    if (!requestedPhone) {
+      res.status(400).json({ ok: false, error: "Valid phone is required" });
+      return;
+    }
+    const limit = asOptionalInt(req.query.limit, 10, 400) || 200;
+    const messages = await listTwilioMessages({ pageSize: 100 });
+    const twilioNumber = normalizePhone(config.twilioPhoneNumber || "") || "";
+    const rows = messages
+      .map((row) => {
+        const from = safeString(row.from) || "";
+        const to = safeString(row.to) || "";
+        const fromNormalized = normalizePhone(from) || from;
+        const toNormalized = normalizePhone(to) || to;
+        const direction = safeString(row.direction)?.toLowerCase() || "";
+        const inbound =
+          direction.includes("inbound") || (Boolean(twilioNumber) && toNormalized === twilioNumber && fromNormalized !== twilioNumber);
+        const timestampRaw = row.dateSent || row.dateCreated || row.dateUpdated || "";
+        const timestampMs = Date.parse(timestampRaw);
+        return {
+          sid: row.sid,
+          status: row.status,
+          body: row.body,
+          direction: row.direction,
+          inbound,
+          from,
+          to,
+          fromNormalized,
+          toNormalized,
+          dateCreated: row.dateCreated,
+          dateSent: row.dateSent,
+          dateUpdated: row.dateUpdated,
+          timestampMs: Number.isFinite(timestampMs) ? timestampMs : 0
+        };
+      })
+      .filter((row) => row.fromNormalized === requestedPhone || row.toNormalized === requestedPhone)
+      .sort((a, b) => a.timestampMs - b.timestampMs)
+      .slice(-limit);
+
+    res.json({
+      ok: true,
+      phone: requestedPhone,
+      twilioNumber,
+      messages: rows,
+      fetchedAt: nowIso()
+    });
+  });
+
+  app.post("/api/sms/reply", async (req: Request, res: Response) => {
+    if (!isTwilioSmsConfigured()) {
+      res.status(400).json({ ok: false, error: "Twilio SMS is not configured" });
+      return;
+    }
+    const body = (req.body || {}) as Record<string, unknown>;
+    const to = normalizePhone(safeString(body.to) || "");
+    const text = safeString(body.body);
+    if (!to) {
+      res.status(400).json({ ok: false, error: "Valid destination phone is required" });
+      return;
+    }
+    if (!text) {
+      res.status(400).json({ ok: false, error: "Message body is required" });
+      return;
+    }
+
+    const sent = await sendSmsMessage({ to, body: text });
+    runtimeInfo("twilio", "manual SMS reply sent", {
+      to,
+      sid: sent.sid || "",
+      status: sent.status
+    });
+    res.json({
+      ok: true,
+      to,
+      sid: sent.sid,
+      status: sent.status
+    });
+  });
+
   app.get("/api/retarget/summary", async (_req: Request, res: Response) => {
     const leads = await withState((state) => Object.values(state.leads).map((lead) => ({ ...lead })));
     const summary = summarizeRetargetBuckets(leads);

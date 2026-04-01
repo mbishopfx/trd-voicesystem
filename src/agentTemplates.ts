@@ -556,7 +556,7 @@ export function buildVapiAssistantDraft(template: AgentTemplate): Record<string,
   return {
     name: template.name,
     firstMessage: template.openingScript,
-    firstMessageMode: "assistant-waits-for-user",
+    firstMessageMode: "assistant-speaks-first",
     voicemailDetection: {
       provider: "vapi",
       backoffPlan: {
@@ -568,7 +568,7 @@ export function buildVapiAssistantDraft(template: AgentTemplate): Record<string,
     },
     model: {
       provider: "openai",
-      model: "gpt-4.1-mini",
+      model: "gpt-4o-mini",
       temperature: 0.3,
       messages: [
         {

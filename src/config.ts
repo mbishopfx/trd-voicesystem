@@ -96,7 +96,7 @@ export const config = {
   defaultTimezone: process.env.DEFAULT_TIMEZONE?.trim() || "America/New_York",
   callWindowStartHour: Math.min(23, Math.max(0, asInt("CALL_WINDOW_START_HOUR", 9))),
   callWindowEndHour: Math.min(24, Math.max(1, asInt("CALL_WINDOW_END_HOUR", 18))),
-  assistantWaitsForUser: asBool("ASSISTANT_WAITS_FOR_USER", true),
+  assistantWaitsForUser: asBool("ASSISTANT_WAITS_FOR_USER", false),
   voicemailDetectionProvider: process.env.VOICEMAIL_DETECTION_PROVIDER?.trim().toLowerCase() || "vapi",
   voicemailDetectionStartAtSeconds: Math.max(0, asFloat("VOICEMAIL_DETECTION_START_AT_SECONDS", 2)),
   voicemailDetectionFrequencySeconds: Math.max(2.5, asFloat("VOICEMAIL_DETECTION_FREQUENCY_SECONDS", 2.5)),

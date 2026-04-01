@@ -125,9 +125,9 @@ export async function createOutboundCall(lead: Lead, options?: OutboundCallOptio
     voicemailDetection
   };
 
-  if (config.assistantWaitsForUser) {
-    assistantOverrides.firstMessageMode = "assistant-waits-for-user";
-  }
+  assistantOverrides.firstMessageMode = config.assistantWaitsForUser
+    ? "assistant-waits-for-user"
+    : "assistant-speaks-first";
 
   const payload: Record<string, unknown> = {
     assistantId,

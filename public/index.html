@@ -84,6 +84,10 @@
             <span class="material-symbols-outlined">insights</span>
             Analytics
           </a>
+          <a data-nav-tab="sms-inbox" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-sms-inbox">
+            <span class="material-symbols-outlined">sms</span>
+            SMS Inbox
+          </a>
           <a data-nav-tab="settings" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-settings">
             <span class="material-symbols-outlined">settings</span>
             Settings
@@ -109,6 +113,7 @@
           <a data-top-tab="prospector" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-prospector">Prospector</a>
           <a data-top-tab="voices" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-voices">Voices</a>
           <a data-top-tab="live-monitor" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-live-monitor">Real-time Alerts</a>
+          <a data-top-tab="sms-inbox" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-sms-inbox">SMS Inbox</a>
         </nav>
       </div>
 
@@ -718,7 +723,7 @@
                 <input id="voicesLlmProvider" type="text" value="openai" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
               </label>
               <label class="text-xs font-bold uppercase tracking-wider text-outline">LLM Model
-                <input id="voicesLlmModel" type="text" value="gpt-4.1-mini" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+                <input id="voicesLlmModel" type="text" value="gpt-4o-mini" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
               </label>
               <label class="text-xs font-bold uppercase tracking-wider text-outline">LLM Temperature
                 <input id="voicesLlmTemperature" type="number" step="0.05" min="0" max="1.2" value="0.35" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
@@ -727,7 +732,7 @@
                 <input id="voicesTranscriberProvider" type="text" value="deepgram" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
               </label>
               <label class="text-xs font-bold uppercase tracking-wider text-outline">Transcriber Model
-                <input id="voicesTranscriberModel" type="text" value="nova-3" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+                <input id="voicesTranscriberModel" type="text" value="nova-2-phonecall" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
               </label>
               <label class="text-xs font-bold uppercase tracking-wider text-outline">Batch Size / Sample Pool
                 <div class="mt-2 grid grid-cols-2 gap-2">
@@ -916,6 +921,46 @@
           </section>
         </section>
 
+        <section id="page-sms-inbox" data-page="sms-inbox" class="hidden space-y-6">
+          <section class="rounded-2xl bg-surface-container-low p-6 shadow-sm">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h3 class="font-headline text-xl font-extrabold text-on-surface">SMS Inbox</h3>
+                <p id="smsInboxStatus" class="text-sm text-outline">Pulling recent Twilio inbound/outbound messages...</p>
+              </div>
+              <button id="smsInboxRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh Inbox</button>
+            </div>
+          </section>
+
+          <section class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <div class="rounded-2xl bg-surface-container-lowest p-4 shadow-sm xl:col-span-1">
+              <h4 class="px-2 pb-2 text-[11px] font-bold uppercase tracking-widest text-outline">Conversations</h4>
+              <div id="smsThreadList" class="max-h-[620px] space-y-2 overflow-auto pr-1">
+                <p class="rounded-xl border border-outline-variant/20 bg-surface-container-low p-3 text-sm text-outline">No messages yet.</p>
+              </div>
+            </div>
+
+            <div class="rounded-2xl bg-surface-container-lowest p-4 shadow-sm xl:col-span-2">
+              <div class="mb-3 flex flex-col gap-1 border-b border-outline-variant/20 px-2 pb-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <p class="text-[10px] font-bold uppercase tracking-widest text-outline">Selected Contact</p>
+                  <p id="smsConversationHeader" class="text-sm font-semibold text-on-surface">Select a conversation</p>
+                </div>
+                <p id="smsConversationMeta" class="text-xs text-outline">--</p>
+              </div>
+              <div id="smsConversationBody" class="no-scrollbar max-h-[480px] space-y-2 overflow-auto rounded-xl border border-outline-variant/20 bg-surface p-3">
+                <p class="text-sm text-outline">Select a conversation to view message history.</p>
+              </div>
+              <div class="mt-4 space-y-2">
+                <textarea id="smsReplyInput" rows="3" placeholder="Type a reply..." class="w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm"></textarea>
+                <div class="flex justify-end">
+                  <button id="smsReplyBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Send Reply</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+
         <section id="page-settings" data-page="settings" class="hidden space-y-6">
           <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
             <h3 class="font-headline text-xl font-extrabold text-on-surface">Integration Readiness</h3>
@@ -935,7 +980,7 @@
     </main>
 
     <script>
-      const TABS = ["dashboard", "campaigns", "scheduler", "prospector", "voices", "live-monitor", "analytics", "settings"];
+      const TABS = ["dashboard", "campaigns", "scheduler", "prospector", "voices", "live-monitor", "analytics", "sms-inbox", "settings"];
       const state = {
         activeTab: "dashboard",
         files: [],
@@ -946,6 +991,13 @@
         schedulerStatus: null,
         schedulerLogs: [],
         voicesStatus: null,
+        smsInbox: {
+          twilioNumber: "",
+          fetchedAt: "",
+          threads: [],
+          messages: [],
+          selectedPhone: ""
+        },
         routeHealth: {
           healthy: false,
           checks: [],
@@ -1140,10 +1192,10 @@
         setVal("voicesFirstMessage", profile?.firstMessage || "");
         setVal("voicesSystemPrompt", profile?.systemPrompt || "");
         setVal("voicesLlmProvider", profile?.llmProvider || "openai");
-        setVal("voicesLlmModel", profile?.llmModel || "gpt-4.1-mini");
+        setVal("voicesLlmModel", profile?.llmModel || "gpt-4o-mini");
         setVal("voicesLlmTemperature", profile?.llmTemperature ?? 0.35);
         setVal("voicesTranscriberProvider", profile?.transcriberProvider || "deepgram");
-        setVal("voicesTranscriberModel", profile?.transcriberModel || "nova-3");
+        setVal("voicesTranscriberModel", profile?.transcriberModel || "nova-2-phonecall");
         setVal("voicesBatchSize", profile?.defaultBatchSize ?? 30);
         setVal("voicesSamplePoolSize", profile?.defaultSamplePoolSize ?? 300);
       }
@@ -1254,6 +1306,149 @@
         populateVoicesProfileSelect(data.profiles || []);
         renderVoicesRuns(data.runs || []);
         renderVoicesAnalytics(data.analytics || []);
+      }
+
+      function selectedSmsThreadPhone() {
+        return String(state.smsInbox?.selectedPhone || "").trim();
+      }
+
+      function renderSmsInboxStatus(message) {
+        const root = document.getElementById("smsInboxStatus");
+        if (!root) return;
+        root.textContent = String(message || "");
+      }
+
+      function renderSmsThreads() {
+        const root = document.getElementById("smsThreadList");
+        if (!root) return;
+        const threads = Array.isArray(state.smsInbox?.threads) ? state.smsInbox.threads : [];
+        const selected = selectedSmsThreadPhone();
+        if (threads.length === 0) {
+          root.innerHTML = `<p class="rounded-xl border border-outline-variant/20 bg-surface-container-low p-3 text-sm text-outline">No SMS conversations found.</p>`;
+          return;
+        }
+
+        root.innerHTML = threads
+          .map((thread) => {
+            const phone = String(thread.phone || "");
+            const active = phone === selected;
+            const when = thread.latestAt ? new Date(thread.latestAt).toLocaleString() : "--";
+            return `<button data-sms-phone="${escapeHtml(phone)}" class="w-full rounded-xl border p-3 text-left transition-all ${
+              active
+                ? "border-teal-300 bg-teal-50/70"
+                : "border-outline-variant/20 bg-white hover:border-teal-200"
+            }">
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-sm font-semibold text-on-surface">${escapeHtml(phone)}</p>
+                <span class="text-[10px] uppercase tracking-widest text-outline">${escapeHtml(String(thread.messageCount || 0))}</span>
+              </div>
+              <p class="mt-1 text-xs text-outline">${escapeHtml((thread.latestBody || "--").slice(0, 90))}</p>
+              <p class="mt-1 text-[10px] uppercase tracking-widest text-outline">${escapeHtml(when)}</p>
+            </button>`;
+          })
+          .join("");
+      }
+
+      function renderSmsConversation() {
+        const header = document.getElementById("smsConversationHeader");
+        const meta = document.getElementById("smsConversationMeta");
+        const body = document.getElementById("smsConversationBody");
+        if (!header || !meta || !body) return;
+
+        const selected = selectedSmsThreadPhone();
+        const twilioNumber = String(state.smsInbox?.twilioNumber || "");
+        const rows = (state.smsInbox?.messages || [])
+          .filter((row) => String(row.counterparty || "") === selected)
+          .slice()
+          .sort((a, b) => {
+            const aTs = Date.parse(a.dateSent || a.dateCreated || a.dateUpdated || "");
+            const bTs = Date.parse(b.dateSent || b.dateCreated || b.dateUpdated || "");
+            return (Number.isFinite(aTs) ? aTs : 0) - (Number.isFinite(bTs) ? bTs : 0);
+          });
+
+        if (!selected) {
+          header.textContent = "Select a conversation";
+          meta.textContent = "--";
+          body.innerHTML = `<p class="text-sm text-outline">Select a conversation to view message history.</p>`;
+          return;
+        }
+
+        header.textContent = selected;
+        meta.textContent = twilioNumber ? `Your Twilio number: ${twilioNumber}` : "--";
+
+        if (rows.length === 0) {
+          body.innerHTML = `<p class="text-sm text-outline">No messages found for this contact in the current inbox window.</p>`;
+          return;
+        }
+
+        body.innerHTML = rows
+          .map((row) => {
+            const inbound = Boolean(row.inbound);
+            const bubbleClass = inbound
+              ? "ml-0 mr-auto border-slate-300 bg-white"
+              : "ml-auto mr-0 border-teal-300 bg-teal-50/80";
+            const stamp = row.dateSent || row.dateCreated || row.dateUpdated;
+            const when = stamp ? new Date(stamp).toLocaleString() : "--";
+            const label = inbound ? "Inbound" : "Outbound";
+            return `<div class="max-w-[85%] rounded-xl border px-3 py-2 ${bubbleClass}">
+              <div class="mb-1 flex items-center justify-between gap-3">
+                <span class="text-[10px] font-bold uppercase tracking-widest text-outline">${escapeHtml(label)}</span>
+                <span class="text-[10px] uppercase tracking-widest text-outline">${escapeHtml(when)}</span>
+              </div>
+              <p class="text-sm whitespace-pre-wrap break-words text-on-surface">${escapeHtml(row.body || "--")}</p>
+            </div>`;
+          })
+          .join("");
+
+        body.scrollTop = body.scrollHeight;
+      }
+
+      async function refreshSmsInbox(silent = false) {
+        try {
+          const data = await getJson("/api/sms/inbox?limit=200");
+          const selectedBefore = selectedSmsThreadPhone();
+          state.smsInbox.twilioNumber = data.twilioNumber || "";
+          state.smsInbox.fetchedAt = data.fetchedAt || "";
+          state.smsInbox.threads = data.threads || [];
+          state.smsInbox.messages = data.messages || [];
+          if (selectedBefore && (state.smsInbox.threads || []).some((row) => row.phone === selectedBefore)) {
+            state.smsInbox.selectedPhone = selectedBefore;
+          } else {
+            state.smsInbox.selectedPhone = state.smsInbox.threads?.[0]?.phone || "";
+          }
+          const refreshedAt = data.fetchedAt ? new Date(data.fetchedAt).toLocaleTimeString() : new Date().toLocaleTimeString();
+          renderSmsInboxStatus(`Showing ${fmtNum((data.threads || []).length)} conversations · Updated ${refreshedAt}`);
+          renderSmsThreads();
+          renderSmsConversation();
+        } catch (error) {
+          state.smsInbox.threads = [];
+          state.smsInbox.messages = [];
+          state.smsInbox.selectedPhone = "";
+          renderSmsThreads();
+          renderSmsConversation();
+          renderSmsInboxStatus(`Inbox unavailable: ${String(error)}`);
+          if (!silent) showToast(String(error), true);
+        }
+      }
+
+      async function sendSmsReplyFromInbox() {
+        const to = selectedSmsThreadPhone();
+        if (!to) {
+          throw new Error("Select an SMS conversation first.");
+        }
+        const input = document.getElementById("smsReplyInput");
+        if (!(input instanceof HTMLTextAreaElement)) {
+          throw new Error("Reply input is unavailable.");
+        }
+        const body = input.value.trim();
+        if (!body) {
+          throw new Error("Reply message cannot be empty.");
+        }
+
+        const sent = await postJson("/api/sms/reply", { to, body });
+        input.value = "";
+        await refreshSmsInbox(true);
+        showToast(`Reply sent to ${to}. sid=${sent.sid || "--"}`);
       }
 
       function artifactLookupValue() {
@@ -1588,6 +1783,9 @@
 
         if (tab === "analytics") {
           refreshAnalytics().catch(() => {});
+        }
+        if (tab === "sms-inbox") {
+          refreshSmsInbox(true).catch(() => {});
         }
       }
 
@@ -2449,6 +2647,31 @@
           }
         });
 
+        document.getElementById("smsInboxRefreshBtn")?.addEventListener("click", async () => {
+          await refreshSmsInbox();
+          showToast("SMS inbox refreshed.");
+        });
+
+        document.getElementById("smsThreadList")?.addEventListener("click", (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const button = target.closest("[data-sms-phone]");
+          if (!(button instanceof HTMLElement)) return;
+          const phone = button.getAttribute("data-sms-phone") || "";
+          if (!phone) return;
+          state.smsInbox.selectedPhone = phone;
+          renderSmsThreads();
+          renderSmsConversation();
+        });
+
+        document.getElementById("smsReplyBtn")?.addEventListener("click", async () => {
+          try {
+            await sendSmsReplyFromInbox();
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
         document.getElementById("routeHealthRefreshBtn").addEventListener("click", async () => {
           try {
             await refreshRouteHealth();
@@ -2507,6 +2730,7 @@
           refreshProspectorRuns(),
           refreshVoices(),
           refreshAnalytics(),
+          refreshSmsInbox(true),
           refreshSettings(),
           refreshRouteHealth()
         ]);
@@ -2519,6 +2743,7 @@
           if (state.activeTab === "scheduler") refreshScheduler().catch(() => {});
           if (state.activeTab === "voices") refreshVoices().catch(() => {});
           if (state.activeTab === "prospector") refreshProspectorRuns().catch(() => {});
+          if (state.activeTab === "sms-inbox") refreshSmsInbox(true).catch(() => {});
         }, 15000);
         setInterval(() => {
           if (state.activeTab === "analytics") refreshAnalytics().catch(() => {});

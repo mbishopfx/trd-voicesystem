@@ -88,7 +88,7 @@ export async function createVapiAssistantFromTemplate(
     firstMessage: template.openingScript,
     model: {
       provider: "openai",
-      model: "gpt-4.1-mini",
+      model: "gpt-4o-mini",
       temperature: 0.3,
       messages: [
         {
@@ -97,7 +97,7 @@ export async function createVapiAssistantFromTemplate(
         }
       ]
     },
-    firstMessageMode: config.assistantWaitsForUser ? "assistant-waits-for-user" : undefined,
+    firstMessageMode: config.assistantWaitsForUser ? "assistant-waits-for-user" : "assistant-speaks-first",
     voicemailDetection: {
       provider: config.voicemailDetectionProvider,
       backoffPlan: {

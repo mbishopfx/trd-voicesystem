@@ -157,10 +157,10 @@ function normalizeProfile(input: Partial<VoiceProfile> & { id: string; name: str
     firstMessage: (input.firstMessage || defaultFirstMessage(ownerName)).trim(),
     systemPrompt: (input.systemPrompt || defaultPrompt(ownerName)).trim(),
     llmProvider: (input.llmProvider || "openai").trim() || "openai",
-    llmModel: (input.llmModel || "gpt-4.1-mini").trim() || "gpt-4.1-mini",
+    llmModel: (input.llmModel || "gpt-4o-mini").trim() || "gpt-4o-mini",
     llmTemperature: Math.max(0, Math.min(1.2, Number(input.llmTemperature ?? 0.35) || 0.35)),
     transcriberProvider: (input.transcriberProvider || "deepgram").trim() || "deepgram",
-    transcriberModel: (input.transcriberModel || "nova-3").trim() || "nova-3",
+    transcriberModel: (input.transcriberModel || "nova-2-phonecall").trim() || "nova-2-phonecall",
     defaultBatchSize: clampBatchSize(Number(input.defaultBatchSize ?? 30) || 30),
     defaultSamplePoolSize: clampSamplePool(Number(input.defaultSamplePoolSize ?? 300) || 300),
     active: input.active !== false,
@@ -470,7 +470,7 @@ async function createVapiAssistant(profile: VoiceProfile): Promise<{ assistantId
     firstMessage: profile.firstMessage,
     model: {
       provider: profile.llmProvider || "openai",
-      model: profile.llmModel || "gpt-4.1-mini",
+      model: profile.llmModel || "gpt-4o-mini",
       temperature: profile.llmTemperature,
       messages: [
         {
@@ -479,7 +479,7 @@ async function createVapiAssistant(profile: VoiceProfile): Promise<{ assistantId
         }
       ]
     },
-    firstMessageMode: config.assistantWaitsForUser ? "assistant-waits-for-user" : undefined,
+    firstMessageMode: config.assistantWaitsForUser ? "assistant-waits-for-user" : "assistant-speaks-first",
     voicemailDetection: {
       provider: config.voicemailDetectionProvider,
       backoffPlan: {
@@ -501,7 +501,7 @@ async function createVapiAssistant(profile: VoiceProfile): Promise<{ assistantId
     ...basePayload,
     transcriber: {
       provider: profile.transcriberProvider || "deepgram",
-      model: profile.transcriberModel || "nova-3",
+      model: profile.transcriberModel || "nova-2-phonecall",
       language: "en-US"
     }
   };
