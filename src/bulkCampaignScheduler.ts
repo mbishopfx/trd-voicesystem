@@ -10,6 +10,7 @@ import {
 } from "./stateDb.js";
 import { fetchLocationContacts, logBulkSchedulerQueuedContact, type GhlSmartListContact } from "./integrations/ghl.js";
 import { normalizePhone } from "./phone.js";
+import { getBulkSchedulerBlockingReasons } from "./runtimeReadiness.js";
 import { runtimeError, runtimeInfo } from "./runtimeLogs.js";
 import { withState } from "./store.js";
 import type { Lead } from "./types.js";
@@ -486,6 +487,19 @@ async function executeRun(options: RunCampaignOptions): Promise<BulkSchedulerRun
   });
 
   try {
+    const blockers = getBulkSchedulerBlockingReasons();
+    if (blockers.length > 0) {
+      runLog.status = "skipped";
+      runLog.summary = blockers.join(" ");
+      runLog.completedAt = nowIso();
+      runtimeInfo("scheduler", "bulk scheduler run skipped", {
+        runId,
+        trigger: options.trigger,
+        blockers
+      });
+      return runLog;
+    }
+
     const pageLimit = Math.min(200, Math.max(50, Math.trunc(settings.samplePoolSize / 3)));
     const maxPages = Math.min(20, Math.max(1, Math.ceil(settings.samplePoolSize / pageLimit)));
     const fetchResult = await fetchLocationContacts({ pageLimit, maxPages });

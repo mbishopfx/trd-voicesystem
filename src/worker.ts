@@ -6,11 +6,13 @@ import { nowIso, randomInt } from "./utils.js";
 import { createOutboundCall, HttpError } from "./vapiClient.js";
 import { syncLeadToGhl } from "./integrations/ghl.js";
 import { runtimeError, runtimeInfo } from "./runtimeLogs.js";
+import { getDialerBlockingReasons } from "./runtimeReadiness.js";
 import { getVapiCreditGuardStatus } from "./vapiCredits.js";
 
 const ACTIVE_QUEUE: LeadStatus[] = ["queued", "retry"];
 let dialerCooldownUntil = 0;
 let lastCreditGuardLogKey = "";
+let lastDialerBlockerLogKey = "";
 
 export interface DialOptions {
   ignoreCallingWindow?: boolean;
@@ -141,6 +143,18 @@ function isEligible(lead: Lead, now: Date, options?: DialOptions): boolean {
 }
 
 async function reserveLead(options?: DialOptions): Promise<Lead | undefined> {
+  const dialerBlockers = getDialerBlockingReasons();
+  if (dialerBlockers.length > 0) {
+    const blockerKey = dialerBlockers.join("|");
+    if (blockerKey !== lastDialerBlockerLogKey) {
+      lastDialerBlockerLogKey = blockerKey;
+      runtimeInfo("dialer", "dialer paused due missing configuration", {
+        blockers: dialerBlockers
+      });
+    }
+    return undefined;
+  }
+
   if (!options?.ignoreCreditGuard) {
     const creditStatus = await getVapiCreditGuardStatus();
     const creditLogKey = `${creditStatus.stopDialing}|${creditStatus.fetchOk}|${creditStatus.availableCredits ?? "na"}|${creditStatus.reason}`;
