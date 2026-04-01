@@ -976,10 +976,23 @@
               </label>
             </div>
             <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">SMS Template
-              <textarea id="smsCampaignTemplate" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">Hi {{firstName}}, this is True Rank Digital. We found a few AI search visibility fixes for {{company}}. Want the quick breakdown?</textarea>
+              <textarea id="smsCampaignTemplate" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">hey [first_name], was just looking at [company_name]'s site and noticed something a little weird... u the owner?</textarea>
             </label>
-            <p class="mt-2 text-xs text-outline">Variables auto-map from CSV headers and aliases: <code>{{firstName}}</code>, <code>{{lastName}}</code>, <code>{{company}}</code>, <code>{{phone}}</code>, <code>{{email}}</code>, and normalized headers like <code>{{business_name}}</code>.</p>
-            <div class="mt-4 flex justify-end">
+            <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Reply Follow-Up Name
+                <input id="smsCampaignMyName" type="text" value="Jarvis" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+              </label>
+              <label class="flex items-center gap-2 pt-6 text-xs font-semibold text-outline">
+                <input id="smsCampaignAutoReplyToggle" type="checkbox" class="h-4 w-4 rounded border-outline-variant/40" checked />
+                Auto-scan inbound replies and send follow-up
+              </label>
+            </div>
+            <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">Reply Follow-Up Template
+              <textarea id="smsCampaignReplyTemplate" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">[my_name] with truerankdigital.com. honestly nothing is actually broken, i just noticed you guys are basically invisible on google's new ai overviews for [city] and your competitors are eating up all the traffic. usually means your entity setup is off. u guys handling your seo in-house right now or do u have an agency?</textarea>
+            </label>
+            <p class="mt-2 text-xs text-outline">Variables support both <code>[first_name]</code> and <code>{{firstName}}</code> formats. Common tokens: <code>[first_name]</code>, <code>[company_name]</code>, <code>[city]</code>, <code>[my_name]</code>.</p>
+            <div class="mt-4 flex flex-wrap justify-end gap-2">
+              <button id="smsCampaignScanRepliesBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Scan Replies + Follow Up</button>
               <button id="smsCampaignRunBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Run SMS Campaign</button>
             </div>
           </section>
@@ -1045,6 +1058,8 @@
           threadMessages: {}
         },
         smsCampaignStatus: null,
+        smsReplyScanInFlight: false,
+        smsReplyLastScanAt: 0,
         routeHealth: {
           healthy: false,
           checks: [],
@@ -1563,6 +1578,14 @@
         if (templateInput instanceof HTMLTextAreaElement && !templateInput.value.trim()) {
           templateInput.value = String(data.defaultTemplate || "");
         }
+        const replyTemplateInput = document.getElementById("smsCampaignReplyTemplate");
+        if (replyTemplateInput instanceof HTMLTextAreaElement && !replyTemplateInput.value.trim()) {
+          replyTemplateInput.value = String(data.defaultReplyTemplate || "");
+        }
+        const myNameInput = document.getElementById("smsCampaignMyName");
+        if (myNameInput instanceof HTMLInputElement && !myNameInput.value.trim()) {
+          myNameInput.value = String(data.defaultMyName || "Jarvis");
+        }
       }
 
       async function runSmsCsvCampaignFromUi() {
@@ -1591,6 +1614,44 @@
 
         await Promise.all([refreshSmsCampaignStatus(), refreshSmsInbox(true)]);
         showToast(data?.run?.summary || "SMS campaign run completed.");
+      }
+
+      async function scanSmsRepliesFromUi(silent = false) {
+        if (state.smsReplyScanInFlight) return;
+        state.smsReplyScanInFlight = true;
+        try {
+          const replyTemplate =
+            document.getElementById("smsCampaignReplyTemplate") instanceof HTMLTextAreaElement
+              ? document.getElementById("smsCampaignReplyTemplate").value.trim()
+              : "";
+          const myName =
+            document.getElementById("smsCampaignMyName") instanceof HTMLInputElement
+              ? document.getElementById("smsCampaignMyName").value.trim()
+              : "";
+
+          const data = await postJson("/api/sms/campaign/scan-replies", {
+            template: replyTemplate || undefined,
+            myName: myName || undefined,
+            pageSize: 100
+          });
+          state.smsReplyLastScanAt = Date.now();
+
+          if (!silent) {
+            showToast(data?.result?.summary || "Reply scan complete.");
+          } else if ((data?.result?.sentCount || 0) > 0) {
+            showToast(`Auto follow-up sent to ${data.result.sentCount} replied lead(s).`);
+          }
+
+          if (data?.status) {
+            state.smsCampaignStatus = data.status;
+            renderSmsCampaignRuns(data.status.runs || []);
+          }
+          await refreshSmsInbox(true);
+        } catch (error) {
+          if (!silent) showToast(String(error), true);
+        } finally {
+          state.smsReplyScanInFlight = false;
+        }
       }
 
       function artifactLookupValue() {
@@ -2828,6 +2889,16 @@
           }
         });
 
+        document.getElementById("smsCampaignScanRepliesBtn")?.addEventListener("click", async () => {
+          const scanBtn = document.getElementById("smsCampaignScanRepliesBtn");
+          if (scanBtn instanceof HTMLButtonElement) scanBtn.disabled = true;
+          try {
+            await scanSmsRepliesFromUi(false);
+          } finally {
+            if (scanBtn instanceof HTMLButtonElement) scanBtn.disabled = false;
+          }
+        });
+
         document.getElementById("routeHealthRefreshBtn").addEventListener("click", async () => {
           try {
             await refreshRouteHealth();
@@ -2903,6 +2974,12 @@
           if (state.activeTab === "sms-inbox") {
             refreshSmsInbox(true).catch(() => {});
             refreshSmsCampaignStatus().catch(() => {});
+            const autoToggle = document.getElementById("smsCampaignAutoReplyToggle");
+            const autoEnabled = autoToggle instanceof HTMLInputElement ? Boolean(autoToggle.checked) : false;
+            const now = Date.now();
+            if (autoEnabled && now - Number(state.smsReplyLastScanAt || 0) >= 60_000) {
+              scanSmsRepliesFromUi(true).catch(() => {});
+            }
           }
         }, 15000);
         setInterval(() => {

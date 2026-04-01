@@ -9,9 +9,12 @@ import {
   withDbJsonState
 } from "./stateDb.js";
 import { buildLeadFromCsvRow, parseCsvRows, type CsvRow } from "./ingest.js";
-import { isTwilioSmsConfigured, sendSmsMessage } from "./integrations/twilioSms.js";
+import { isTwilioSmsConfigured, listTwilioMessages, sendSmsMessage } from "./integrations/twilioSms.js";
+import { normalizePhone } from "./phone.js";
 import { runtimeError, runtimeInfo } from "./runtimeLogs.js";
+import { withState } from "./store.js";
 import { nowIso, sleep } from "./utils.js";
+import type { Lead } from "./types.js";
 
 export interface SmsCampaignDelivery {
   row: number;
@@ -46,6 +49,7 @@ export interface SmsCampaignRunLog {
 
 interface SmsCampaignState {
   runs: SmsCampaignRunLog[];
+  replyMarkers: Record<string, { lastInboundSid?: string; lastFollowUpSentAt?: string; lastFollowUpSid?: string }>;
   updatedAt: string;
 }
 
@@ -55,6 +59,18 @@ export interface RunSmsCsvCampaignOptions {
   campaignName?: string;
   template?: string;
   trustImportLeads?: boolean;
+}
+
+export interface SmsReplyFollowUpScanResult {
+  id: string;
+  status: "completed" | "error" | "skipped";
+  startedAt: string;
+  completedAt?: string;
+  scannedThreads: number;
+  sentCount: number;
+  skippedCount: number;
+  summary: string;
+  errors: string[];
 }
 
 const STATE_KEY = "sms_campaign_registry";
@@ -68,6 +84,7 @@ let memoryState: SmsCampaignState | undefined;
 function createEmptyState(): SmsCampaignState {
   return {
     runs: [],
+    replyMarkers: {},
     updatedAt: nowIso()
   };
 }
@@ -83,6 +100,7 @@ function getMemoryState(): SmsCampaignState {
 
 function normalizeState(state: SmsCampaignState): SmsCampaignState {
   state.runs = Array.isArray(state.runs) ? state.runs.slice(-MAX_RUN_LOGS) : [];
+  state.replyMarkers = state.replyMarkers && typeof state.replyMarkers === "object" ? state.replyMarkers : {};
   state.updatedAt = state.updatedAt || nowIso();
   return state;
 }
@@ -271,10 +289,12 @@ function renderTemplate(template: string, vars: Map<string, string>): string {
   const base = String(template || "").trim();
   if (!base) return "";
 
-  const rendered = base.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, token) => {
+  const resolveToken = (token: string): string => {
     const key = normalizeVariableKey(String(token || ""));
     return vars.get(key) || "";
-  });
+  };
+  const withBraces = base.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, token) => resolveToken(String(token || "")));
+  const rendered = withBraces.replace(/\[\s*([a-zA-Z0-9_]+?)\s*\]/g, (_match, token) => resolveToken(String(token || "")));
 
   return rendered
     .replace(/[\t ]+\n/g, "\n")
@@ -296,14 +316,22 @@ export function defaultSmsCampaignTemplate(): string {
   return config.smsCampaignDefaultTemplate;
 }
 
+export function defaultSmsCampaignReplyTemplate(): string {
+  return config.smsCampaignReplyTemplate;
+}
+
 export async function getSmsCampaignDashboard(): Promise<{
   runs: SmsCampaignRunLog[];
   defaultTemplate: string;
+  defaultReplyTemplate: string;
+  defaultMyName: string;
 }> {
   const state = await loadSmsCampaignState();
   return {
     runs: [...state.runs].slice(-60).reverse(),
-    defaultTemplate: defaultSmsCampaignTemplate()
+    defaultTemplate: defaultSmsCampaignTemplate(),
+    defaultReplyTemplate: defaultSmsCampaignReplyTemplate(),
+    defaultMyName: config.smsCampaignDefaultMyName
   };
 }
 
@@ -481,6 +509,179 @@ export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Prom
       } else {
         appendRun(state, run);
       }
+    });
+  }
+
+  return run;
+}
+
+function leadByPhoneMap(leads: Lead[]): Map<string, Lead> {
+  const out = new Map<string, Lead>();
+  for (const lead of leads) {
+    const normalized = normalizePhone(lead.phone || "");
+    if (!normalized) continue;
+    if (!out.has(normalized)) out.set(normalized, lead);
+  }
+  return out;
+}
+
+export async function runSmsReplyFollowUpScan(input?: {
+  template?: string;
+  myName?: string;
+  pageSize?: number;
+}): Promise<SmsReplyFollowUpScanResult> {
+  if (!isTwilioSmsConfigured()) {
+    throw new Error("Twilio SMS is not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)");
+  }
+
+  const template = String(input?.template || defaultSmsCampaignReplyTemplate()).trim();
+  if (!template) {
+    throw new Error("Reply follow-up template is required");
+  }
+
+  const myName = String(input?.myName || config.smsCampaignDefaultMyName || "Jarvis").trim() || "Jarvis";
+  const pageSize = Math.max(20, Math.min(100, Math.trunc(Number(input?.pageSize || 100))));
+  const run: SmsReplyFollowUpScanResult = {
+    id: `sms-reply-scan-${Date.now()}`,
+    status: "completed",
+    startedAt: nowIso(),
+    scannedThreads: 0,
+    sentCount: 0,
+    skippedCount: 0,
+    summary: "Reply scan completed.",
+    errors: []
+  };
+
+  try {
+    const [campaignState, leads, messages] = await Promise.all([
+      loadSmsCampaignState(),
+      withState((state) => Object.values(state.leads).map((lead) => ({ ...lead }))),
+      listTwilioMessages({ pageSize })
+    ]);
+    const markerByPhone = campaignState.replyMarkers || {};
+    const leadMap = leadByPhoneMap(leads);
+    const twilioNumber = normalizePhone(config.twilioPhoneNumber || "") || "";
+
+    const normalized = messages
+      .map((row) => {
+        const from = String(row.from || "").trim();
+        const to = String(row.to || "").trim();
+        const fromNormalized = normalizePhone(from) || from;
+        const toNormalized = normalizePhone(to) || to;
+        const direction = String(row.direction || "").toLowerCase();
+        const inbound =
+          direction.includes("inbound") || (Boolean(twilioNumber) && toNormalized === twilioNumber && fromNormalized !== twilioNumber);
+        const counterparty = inbound ? fromNormalized : toNormalized;
+        const stamp = row.dateSent || row.dateCreated || row.dateUpdated || "";
+        const ts = Date.parse(stamp);
+        return {
+          sid: String(row.sid || "").trim(),
+          inbound,
+          counterparty,
+          body: String(row.body || "").trim(),
+          timestampMs: Number.isFinite(ts) ? ts : 0,
+          dateStamp: stamp
+        };
+      })
+      .filter((row) => Boolean(row.counterparty));
+
+    const threads = new Map<string, typeof normalized>();
+    for (const row of normalized) {
+      const key = row.counterparty;
+      const bucket = threads.get(key) || [];
+      bucket.push(row);
+      threads.set(key, bucket);
+    }
+
+    run.scannedThreads = threads.size;
+    const markerUpdates: Record<string, { lastInboundSid?: string; lastFollowUpSentAt?: string; lastFollowUpSid?: string }> = {};
+
+    for (const [phone, rows] of threads.entries()) {
+      const sortedDesc = rows.slice().sort((a, b) => b.timestampMs - a.timestampMs);
+      const latestInbound = sortedDesc.find((row) => row.inbound);
+      if (!latestInbound) {
+        run.skippedCount += 1;
+        continue;
+      }
+
+      const lastMarker = markerByPhone[phone];
+      if (latestInbound.sid && lastMarker?.lastInboundSid === latestInbound.sid) {
+        run.skippedCount += 1;
+        continue;
+      }
+
+      const alreadyReplied = sortedDesc.some((row) => !row.inbound && row.timestampMs > latestInbound.timestampMs);
+      if (alreadyReplied) {
+        markerUpdates[phone] = {
+          ...(markerUpdates[phone] || lastMarker || {}),
+          lastInboundSid: latestInbound.sid || lastMarker?.lastInboundSid
+        };
+        run.skippedCount += 1;
+        continue;
+      }
+
+      const lead = leadMap.get(phone);
+      const vars = new Map<string, string>();
+      const setVar = (key: string, value: string): void => {
+        const normalizedKey = normalizeVariableKey(key);
+        if (!normalizedKey) return;
+        vars.set(normalizedKey, String(value || "").trim());
+      };
+      setVar("my_name", myName);
+      setVar("first_name", lead?.firstName || "there");
+      setVar("company_name", lead?.company || "your business");
+      setVar("city", lead?.prospectCity || "your area");
+      setVar("inbound_message", latestInbound.body || "");
+      setVar("phone", phone);
+
+      const rendered = renderTemplate(template, vars);
+      if (!rendered) {
+        run.errors.push(`Skipped ${phone}: reply follow-up rendered empty`);
+        run.skippedCount += 1;
+        continue;
+      }
+
+      try {
+        const sent = await sendSmsMessage({ to: phone, body: rendered });
+        markerUpdates[phone] = {
+          ...(markerUpdates[phone] || lastMarker || {}),
+          lastInboundSid: latestInbound.sid || lastMarker?.lastInboundSid,
+          lastFollowUpSentAt: nowIso(),
+          lastFollowUpSid: sent.sid
+        };
+        run.sentCount += 1;
+      } catch (error) {
+        run.errors.push(`Failed ${phone}: ${String(error).slice(0, 180)}`);
+      }
+    }
+
+    await withSmsCampaignState((state) => {
+      state.replyMarkers = state.replyMarkers && typeof state.replyMarkers === "object" ? state.replyMarkers : {};
+      for (const [phone, marker] of Object.entries(markerUpdates)) {
+        state.replyMarkers[phone] = {
+          ...(state.replyMarkers[phone] || {}),
+          ...marker
+        };
+      }
+    });
+
+    run.completedAt = nowIso();
+    run.status = run.sentCount > 0 ? "completed" : "skipped";
+    run.summary = `Scanned ${run.scannedThreads} threads, sent ${run.sentCount}, skipped ${run.skippedCount}.`;
+    run.errors = trimErrors(run.errors);
+    runtimeInfo("twilio", "sms reply follow-up scan completed", {
+      runId: run.id,
+      scannedThreads: run.scannedThreads,
+      sentCount: run.sentCount,
+      skippedCount: run.skippedCount
+    });
+  } catch (error) {
+    run.status = "error";
+    run.completedAt = nowIso();
+    run.summary = "Reply scan failed.";
+    run.errors = trimErrors([...run.errors, String(error)]);
+    runtimeError("twilio", "sms reply follow-up scan failed", error, {
+      runId: run.id
     });
   }
 

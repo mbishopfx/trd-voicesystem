@@ -115,7 +115,7 @@ import {
   spinUpAssistantForProfile,
   upsertVoiceProfile
 } from "./voices.js";
-import { getSmsCampaignDashboard, runSmsCsvCampaign } from "./smsCampaigns.js";
+import { getSmsCampaignDashboard, runSmsCsvCampaign, runSmsReplyFollowUpScan } from "./smsCampaigns.js";
 
 type RawBodyRequest = Request & { rawBody?: string };
 let reconcileLoopStarted = false;
@@ -3751,6 +3751,21 @@ export function createServer() {
       });
       const status = await getSmsCampaignDashboard();
       res.json({ ok: true, run, status });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.post("/api/sms/campaign/scan-replies", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    try {
+      const result = await runSmsReplyFollowUpScan({
+        template: safeString(body.template),
+        myName: safeString(body.myName),
+        pageSize: asOptionalInt(body.pageSize, 20, 100)
+      });
+      const status = await getSmsCampaignDashboard();
+      res.json({ ok: true, result, status });
     } catch (error) {
       res.status(500).json({ ok: false, error: String(error) });
     }
