@@ -1067,14 +1067,14 @@
                 <input id="smsCampaignMyName" type="text" value="Jarvis" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
               </label>
               <label class="flex items-center gap-2 pt-6 text-xs font-semibold text-outline">
-                <input id="smsCampaignAutoReplyToggle" type="checkbox" class="h-4 w-4 rounded border-outline-variant/40" checked />
+                <input id="smsCampaignAutoReplyToggle" type="checkbox" class="h-4 w-4 rounded border-outline-variant/40" />
                 Auto-scan inbound replies and send follow-up
               </label>
             </div>
             <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">Reply Follow-Up Template
               <textarea id="smsCampaignReplyTemplate" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">[my_name] with truerankdigital.com. honestly nothing is actually broken, i just noticed you guys are basically invisible on google's new ai overviews for [city] and your competitors are eating up all the traffic. usually means your entity setup is off. u guys handling your seo in-house right now or do u have an agency?</textarea>
             </label>
-            <p class="mt-2 text-xs text-outline">Variables support both <code>[first_name]</code> and <code>{{firstName}}</code> formats. Common tokens: <code>[first_name]</code>, <code>[company_name]</code>, <code>[city]</code>, <code>[my_name]</code>.</p>
+            <p class="mt-2 text-xs text-outline">Variables support both <code>[first_name]</code> and <code>{{firstName}}</code> formats. Common tokens: <code>[first_name]</code>, <code>[company_name]</code>, <code>[city]</code>, <code>[my_name]</code>. Opt-out replies like STOP and REMOVE are suppressed and marked do-not-contact.</p>
             <div class="mt-4 flex flex-wrap justify-end gap-2">
               <button id="smsCampaignScanRepliesBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Scan Replies + Follow Up</button>
               <button id="smsCampaignRunBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Run SMS Campaign</button>
@@ -2761,13 +2761,13 @@
 
         document.getElementById("prospectorReadyBtn").addEventListener("click", async () => {
           try {
-            const leads = await getJson("/api/prospector/leads?limit=100");
-            const candidate = (leads.leads || []).find((lead) => lead.generatedSitePath && lead.generatedScreenshotPath && lead.handoffStatus === 'ready_for_review');
-            if (!candidate) throw new Error('No generated prospect is ready for call handoff yet.');
-            await postJson("/api/prospector/ready-for-call", { leadId: candidate.id });
+            const reviewQueue = await getJson("/api/prospector/review-queue?limit=100");
+            const candidate = (reviewQueue.queue || []).find((lead) => lead.handoffStatus !== 'ready_for_call' && lead.blockers.length === 0);
+            if (!candidate) throw new Error('No prospect has all required assets for call handoff yet.');
+            await postJson("/api/prospector/ready-for-call", { leadId: candidate.leadId });
             await refreshProspectorRuns();
             await refreshLeads();
-            showToast(`Prospect ${candidate.id} marked ready for call.`);
+            showToast(`Prospect ${candidate.leadId} marked ready for call.`);
           } catch (error) {
             showToast(String(error), true);
           }
@@ -2775,13 +2775,13 @@
 
         document.getElementById("prospectorQueueBtn").addEventListener("click", async () => {
           try {
-            const leads = await getJson("/api/prospector/leads?limit=100");
-            const candidate = (leads.leads || []).find((lead) => lead.handoffStatus === 'ready_for_call');
-            if (!candidate) throw new Error('No prospect is currently marked ready for call.');
-            await postJson("/api/prospector/release-to-queue", { leadId: candidate.id });
+            const reviewQueue = await getJson("/api/prospector/review-queue?limit=100");
+            const candidate = (reviewQueue.queue || []).find((lead) => lead.handoffStatus === 'ready_for_call' && lead.blockers.length === 0);
+            if (!candidate) throw new Error('No fully prepared prospect is currently marked ready for call.');
+            await postJson("/api/prospector/release-to-queue", { leadId: candidate.leadId });
             await refreshProspectorRuns();
             await refreshLeads();
-            showToast(`Prospect ${candidate.id} released to queue.`);
+            showToast(`Prospect ${candidate.leadId} released to queue.`);
           } catch (error) {
             showToast(String(error), true);
           }

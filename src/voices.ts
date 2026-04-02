@@ -11,6 +11,7 @@ import {
 } from "./stateDb.js";
 import { fetchLocationContacts, logBulkSchedulerQueuedContact, type GhlSmartListContact } from "./integrations/ghl.js";
 import { buildLeadFromCsvRow, parseCsvRows } from "./ingest.js";
+import { extractLeadVariables } from "./leadVariables.js";
 import { normalizePhone } from "./phone.js";
 import { runtimeError, runtimeInfo } from "./runtimeLogs.js";
 import { withState } from "./store.js";
@@ -963,6 +964,10 @@ export async function runVoiceCsvCampaign(
 
         const existing = store.leads[built.id];
         const now = nowIso();
+        const voiceVariables = extractLeadVariables(row, {
+          ...built,
+          campaign: campaignName
+        });
         const findings = [built.findings, `Queued by Voices profile "${profile.name}"`].filter(Boolean).join(" | ");
         const notes = [
           built.notes,
@@ -989,6 +994,10 @@ export async function runVoiceCsvCampaign(
           existing.bookingUrlOverride = profile.calendarUrl || existing.bookingUrlOverride;
           existing.voiceProfileId = profile.id;
           existing.voiceProfileName = profile.name;
+          existing.voiceVariables = {
+            ...(existing.voiceVariables || {}),
+            ...voiceVariables
+          };
           existing.optIn = true;
           ensureLeadBdcWorkflow(existing);
 
@@ -1027,6 +1036,7 @@ export async function runVoiceCsvCampaign(
           bookingUrlOverride: profile.calendarUrl || undefined,
           voiceProfileId: profile.id,
           voiceProfileName: profile.name,
+          voiceVariables,
           optIn: true,
           dnc: Boolean(built.dnc),
           status: built.dnc ? "blocked" : "queued",

@@ -106,6 +106,8 @@ export async function createOutboundCall(lead: Lead, options?: OutboundCallOptio
     calendlyUrl: config.bookingUrlCalendly,
     googleCalendarUrl: config.bookingUrlGoogleCalendar,
     campaignName: lead.campaign,
+    ...(lead.voiceVariables || {}),
+    ...(lead.prospectorVoiceVariables || {}),
     ...(options?.additionalVariables || {})
   };
 

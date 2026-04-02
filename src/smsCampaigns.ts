@@ -10,6 +10,7 @@ import {
 } from "./stateDb.js";
 import { buildLeadFromCsvRow, parseCsvRows, type CsvRow } from "./ingest.js";
 import { isTwilioSmsConfigured, listTwilioMessages, sendSmsMessage } from "./integrations/twilioSms.js";
+import { extractLeadVariables, normalizeVariableKey } from "./leadVariables.js";
 import { normalizePhone } from "./phone.js";
 import { runtimeError, runtimeInfo } from "./runtimeLogs.js";
 import { withState } from "./store.js";
@@ -49,7 +50,16 @@ export interface SmsCampaignRunLog {
 
 interface SmsCampaignState {
   runs: SmsCampaignRunLog[];
-  replyMarkers: Record<string, { lastInboundSid?: string; lastFollowUpSentAt?: string; lastFollowUpSid?: string }>;
+  replyMarkers: Record<
+    string,
+    {
+      lastInboundSid?: string;
+      lastFollowUpSentAt?: string;
+      lastFollowUpSid?: string;
+      optedOutAt?: string;
+      optOutReason?: string;
+    }
+  >;
   updatedAt: string;
 }
 
@@ -69,6 +79,7 @@ export interface SmsReplyFollowUpScanResult {
   scannedThreads: number;
   sentCount: number;
   skippedCount: number;
+  optOutCount: number;
   summary: string;
   errors: string[];
 }
@@ -245,10 +256,6 @@ function appendRun(state: SmsCampaignState, run: SmsCampaignRunLog): void {
   state.updatedAt = nowIso();
 }
 
-function normalizeVariableKey(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
 function toText(value: unknown): string {
   if (value === undefined || value === null) return "";
   if (typeof value === "string") return value.trim();
@@ -257,32 +264,14 @@ function toText(value: unknown): string {
 }
 
 function buildVariableMap(row: CsvRow, campaignName: string, fallback: ReturnType<typeof buildLeadFromCsvRow>): Map<string, string> {
-  const vars = new Map<string, string>();
-
-  const put = (key: string, value: unknown): void => {
-    const normalizedKey = normalizeVariableKey(key);
-    const normalizedValue = toText(value);
-    if (!normalizedKey) return;
-    if (!normalizedValue) return;
-    vars.set(normalizedKey, normalizedValue);
-  };
-
-  for (const [key, value] of Object.entries(row)) {
-    put(key, value);
-  }
-
-  put("firstName", fallback?.firstName);
-  put("lastName", fallback?.lastName);
-  put("fullName", [fallback?.firstName, fallback?.lastName].filter(Boolean).join(" "));
-  put("company", fallback?.company);
-  put("business", fallback?.company);
-  put("email", fallback?.email);
-  put("phone", fallback?.phone);
-  put("campaign", campaignName || fallback?.campaign);
-  put("campaignName", campaignName || fallback?.campaign);
-  put("timezone", fallback?.timezone);
-
-  return vars;
+  return new Map(
+    Object.entries(
+      extractLeadVariables(row, fallback || undefined, {
+        campaign: campaignName || fallback?.campaign || "",
+        campaignName: campaignName || fallback?.campaign || ""
+      })
+    )
+  );
 }
 
 function renderTemplate(template: string, vars: Map<string, string>): string {
@@ -310,6 +299,83 @@ function safeFileName(input?: string): string {
 
 function trimErrors(errors: string[]): string[] {
   return errors.map((entry) => entry.slice(0, 220)).slice(-80);
+}
+
+function normalizeSmsPhone(value: string): string {
+  return normalizePhone(value) || String(value || "").trim();
+}
+
+function detectOptOutIntent(message: string): string | undefined {
+  const normalized = String(message || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return undefined;
+
+  const words = normalized.split(" ").filter(Boolean);
+
+  const directMatches = new Set([
+    "stop",
+    "stopall",
+    "unsubscribe",
+    "cancel",
+    "end",
+    "quit",
+    "remove",
+    "opt out",
+    "do not text",
+    "dont text",
+    "do not contact",
+    "dont contact"
+  ]);
+  if (directMatches.has(normalized)) return normalized;
+
+  if (words.length <= 4 && /\b(stop|unsubscribe|remove|cancel|quit|end)\b/.test(normalized)) {
+    return normalized;
+  }
+  if (/\b(do not|dont)\s+(text|contact|message)\b/.test(normalized)) {
+    return normalized;
+  }
+  return undefined;
+}
+
+export async function getSmsOptOutStatus(phone: string): Promise<{ optedOut: boolean; reason?: string; at?: string }> {
+  const normalizedPhone = normalizeSmsPhone(phone);
+  if (!normalizedPhone) return { optedOut: false };
+  const state = await loadSmsCampaignState();
+  const marker = state.replyMarkers?.[normalizedPhone];
+  return {
+    optedOut: Boolean(marker?.optedOutAt),
+    reason: marker?.optOutReason,
+    at: marker?.optedOutAt
+  };
+}
+
+async function markPhoneOptedOut(phone: string, reason: string): Promise<void> {
+  const normalizedPhone = normalizeSmsPhone(phone);
+  const optedOutAt = nowIso();
+  await withSmsCampaignState((state) => {
+    state.replyMarkers = state.replyMarkers && typeof state.replyMarkers === "object" ? state.replyMarkers : {};
+    state.replyMarkers[normalizedPhone] = {
+      ...(state.replyMarkers[normalizedPhone] || {}),
+      optedOutAt,
+      optOutReason: reason
+    };
+  });
+
+  await withState((state) => {
+    for (const lead of Object.values(state.leads)) {
+      if (normalizeSmsPhone(lead.phone) !== normalizedPhone) continue;
+      lead.dnc = true;
+      lead.status = "blocked";
+      lead.bdcAutomationEnabled = false;
+      lead.nextAttemptAt = undefined;
+      lead.lastError = `SMS opt-out: ${reason}`;
+      lead.updatedAt = optedOutAt;
+    }
+  });
 }
 
 export function defaultSmsCampaignTemplate(): string {
@@ -356,6 +422,13 @@ export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Prom
   const fileName = safeFileName(options.fileName);
   const campaignName = (String(options.campaignName || "").trim() || `SMS Campaign ${new Date().toLocaleDateString()}`).slice(0, 120);
   const cpsDelayMs = Math.max(0, Math.ceil(1000 / Math.max(0.1, config.twilioCps)));
+  const existingState = await loadSmsCampaignState();
+  const optedOutPhones = new Set(
+    Object.entries(existingState.replyMarkers || {})
+      .filter(([, marker]) => Boolean(marker?.optedOutAt))
+      .map(([phone]) => normalizeSmsPhone(phone))
+      .filter(Boolean)
+  );
 
   const run: SmsCampaignRunLog = {
     id: runId,
@@ -415,6 +488,18 @@ export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Prom
           phone: lead.phone,
           status: "skipped",
           error: "DNC/opt-out"
+        });
+        continue;
+      }
+
+      if (optedOutPhones.has(normalizeSmsPhone(lead.phone))) {
+        run.blockedCount += 1;
+        run.skippedCount += 1;
+        run.deliveries.push({
+          row: sourceRow,
+          phone: lead.phone,
+          status: "skipped",
+          error: "SMS opt-out"
         });
         continue;
       }
@@ -548,6 +633,7 @@ export async function runSmsReplyFollowUpScan(input?: {
     scannedThreads: 0,
     sentCount: 0,
     skippedCount: 0,
+    optOutCount: 0,
     summary: "Reply scan completed.",
     errors: []
   };
@@ -594,7 +680,16 @@ export async function runSmsReplyFollowUpScan(input?: {
     }
 
     run.scannedThreads = threads.size;
-    const markerUpdates: Record<string, { lastInboundSid?: string; lastFollowUpSentAt?: string; lastFollowUpSid?: string }> = {};
+    const markerUpdates: Record<
+      string,
+      {
+        lastInboundSid?: string;
+        lastFollowUpSentAt?: string;
+        lastFollowUpSid?: string;
+        optedOutAt?: string;
+        optOutReason?: string;
+      }
+    > = {};
 
     for (const [phone, rows] of threads.entries()) {
       const sortedDesc = rows.slice().sort((a, b) => b.timestampMs - a.timestampMs);
@@ -605,6 +700,29 @@ export async function runSmsReplyFollowUpScan(input?: {
       }
 
       const lastMarker = markerByPhone[phone];
+      const optOutReason = detectOptOutIntent(latestInbound.body);
+      if (optOutReason) {
+        markerUpdates[phone] = {
+          ...(markerUpdates[phone] || lastMarker || {}),
+          lastInboundSid: latestInbound.sid || lastMarker?.lastInboundSid,
+          optedOutAt: nowIso(),
+          optOutReason
+        };
+        await markPhoneOptedOut(phone, optOutReason);
+        run.optOutCount += 1;
+        run.skippedCount += 1;
+        continue;
+      }
+
+      if (lastMarker?.optedOutAt) {
+        markerUpdates[phone] = {
+          ...(markerUpdates[phone] || lastMarker || {}),
+          lastInboundSid: latestInbound.sid || lastMarker?.lastInboundSid
+        };
+        run.skippedCount += 1;
+        continue;
+      }
+
       if (latestInbound.sid && lastMarker?.lastInboundSid === latestInbound.sid) {
         run.skippedCount += 1;
         continue;
@@ -667,7 +785,7 @@ export async function runSmsReplyFollowUpScan(input?: {
 
     run.completedAt = nowIso();
     run.status = run.sentCount > 0 ? "completed" : "skipped";
-    run.summary = `Scanned ${run.scannedThreads} threads, sent ${run.sentCount}, skipped ${run.skippedCount}.`;
+    run.summary = `Scanned ${run.scannedThreads} threads, sent ${run.sentCount}, opted out ${run.optOutCount}, skipped ${run.skippedCount}.`;
     run.errors = trimErrors(run.errors);
     runtimeInfo("twilio", "sms reply follow-up scan completed", {
       runId: run.id,

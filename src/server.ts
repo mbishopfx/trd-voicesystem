@@ -5,6 +5,7 @@ import path from "node:path";
 import { config, effectiveCps, resolvedBookingUrl } from "./config.js";
 import { buildLeadFromCsvRow, ingestOnce, parseCsvRows } from "./ingest.js";
 import { inferOutcome, hasPromptInjectionSignals } from "./outcomes.js";
+import { extractLeadVariables } from "./leadVariables.js";
 import { normalizePhone } from "./phone.js";
 import { withState } from "./store.js";
 import type { Lead } from "./types.js";
@@ -20,6 +21,7 @@ import { getProspectLeadById } from "./prospectTest.js";
 import { createProspectVisionTemplate } from "./prospectTemplate.js";
 import { createTonyDemoTemplate } from "./tonyDemoTemplate.js";
 import { deployGeneratedProspects } from "./deploy.js";
+import { buildProspectorReviewQueue } from "./prospectorReview.js";
 import {
   importProspectorLeadsToGhl,
   runProspectorPhase2,
@@ -117,7 +119,7 @@ import {
   spinUpAssistantForProfile,
   upsertVoiceProfile
 } from "./voices.js";
-import { getSmsCampaignDashboard, runSmsCsvCampaign, runSmsReplyFollowUpScan } from "./smsCampaigns.js";
+import { getSmsCampaignDashboard, getSmsOptOutStatus, runSmsCsvCampaign, runSmsReplyFollowUpScan } from "./smsCampaigns.js";
 
 type RawBodyRequest = Request & { rawBody?: string };
 let reconcileLoopStarted = false;
@@ -2736,6 +2738,10 @@ export function createServer() {
           }
 
           const findings = built.findings || campaignScope;
+          const voiceVariables = extractLeadVariables(row, {
+            ...built,
+            campaign: campaignName
+          });
           const noteParts = [
             built.notes,
             `Jarvis campaign upload: ${campaignName}`,
@@ -2757,6 +2763,10 @@ export function createServer() {
             existing.sourceRow = i + 2;
             existing.findings = findings || existing.findings;
             existing.notes = noteParts.join(" | ").slice(0, 1200);
+            existing.voiceVariables = {
+              ...(existing.voiceVariables || {}),
+              ...voiceVariables
+            };
             existing.assistantIdOverride = createdAssistant?.assistantId || existing.assistantIdOverride;
 
             if (existing.dnc || built.dnc) {
@@ -2796,6 +2806,7 @@ export function createServer() {
             sourceRow: i + 2,
             findings,
             notes: noteParts.join(" | ").slice(0, 1200),
+            voiceVariables,
             assistantIdOverride: createdAssistant?.assistantId,
             optIn: true,
             dnc: Boolean(built.dnc),
@@ -3014,6 +3025,22 @@ export function createServer() {
         }));
     });
     res.json({ ok: true, count: leads.length, leads });
+  });
+
+  app.get("/api/prospector/review-queue", async (req: Request, res: Response) => {
+    const limit = asOptionalInt(req.query.limit, 1, 500) || 50;
+    const leads = await withState((state) => Object.values(state.leads).map((lead) => ({ ...lead })));
+    const queue = buildProspectorReviewQueue(leads, limit);
+    res.json({
+      ok: true,
+      count: queue.length,
+      summary: {
+        readyForCall: queue.filter((item) => item.handoffStatus === "ready_for_call" && item.blockers.length === 0).length,
+        blockedByAssets: queue.filter((item) => item.blockers.length > 0).length,
+        alreadyQueued: queue.filter((item) => item.handoffStatus === "sent_to_queue").length
+      },
+      queue
+    });
   });
 
   app.get("/api/prospector/site/:leadId", async (req: Request, res: Response) => {
@@ -4065,6 +4092,15 @@ export function createServer() {
     }
     if (!text) {
       res.status(400).json({ ok: false, error: "Message body is required" });
+      return;
+    }
+
+    const optOut = await getSmsOptOutStatus(to);
+    if (optOut.optedOut) {
+      res.status(409).json({
+        ok: false,
+        error: `SMS blocked: recipient opted out${optOut.reason ? ` (${optOut.reason})` : ""}`
+      });
       return;
     }
 

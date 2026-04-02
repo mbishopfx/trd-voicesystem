@@ -76,6 +76,7 @@ export interface Lead {
   deployedSiteUrl?: string;
   prospectorVoiceScript?: string;
   prospectorVoiceVariables?: Record<string, string>;
+  voiceVariables?: Record<string, string>;
   prospectorScriptCreatedAt?: string;
   prospectorCallAssistantId?: string;
   prospectorCalledAt?: string;
