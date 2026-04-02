@@ -25,6 +25,13 @@ export interface OperationsSnapshot {
   };
 }
 
+export interface RecommendedAction {
+  priority: "high" | "medium" | "low";
+  area: "dialer" | "scheduler" | "prospector" | "integrations" | "runtime";
+  title: string;
+  detail: string;
+}
+
 function hasAssistantConfig(): boolean {
   return Boolean(
     config.vapiAssistantId || config.vapiAssistantIdFemale || config.vapiAssistantIdMale || config.vapiProspectorAssistantId
@@ -131,4 +138,104 @@ export function buildOperationsSnapshot(leads: Lead[], logs: RuntimeLogEntry[]):
       recentRestartCount: recentRestarts.length
     }
   };
+}
+
+export function buildRecommendedActions(leads: Lead[], logs: RuntimeLogEntry[]): RecommendedAction[] {
+  const actions: RecommendedAction[] = [];
+  const recentWindowMs = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const recentErrors = logs.filter((entry) => entry.level === "error" && now - entry.ts <= recentWindowMs);
+  const missingVapiFailures = leads.filter((lead) =>
+    String(lead.lastError || "").toLowerCase().includes("missing vapi api key")
+  ).length;
+  const blockedProspects = leads.filter((lead) => lead.status === "blocked" && lead.sourceFile === "prospector-dashboard").length;
+  const generatedNotDeployed = leads.filter((lead) => lead.generatedSitePath && !lead.deployedSiteUrl).length;
+  const readyForReview = leads.filter((lead) => lead.handoffStatus === "ready_for_review").length;
+  const deployedWithoutScript = leads.filter(
+    (lead) => lead.sourceFile === "prospector-dashboard" && lead.deployedSiteUrl && !lead.prospectorVoiceScript
+  ).length;
+  const ghlErrors = leads.filter((lead) => Boolean(lead.ghlLastError)).length;
+  const restartCount = logs.filter(
+    (entry) =>
+      entry.scope === "server" &&
+      entry.message.startsWith("Listening on :") &&
+      now - entry.ts <= 6 * 60 * 60 * 1000
+  ).length;
+
+  if (!config.vapiApiKey || missingVapiFailures > 0) {
+    actions.push({
+      priority: "high",
+      area: "dialer",
+      title: "Fix Vapi credentials before any further dialing",
+      detail: `${missingVapiFailures} leads already carry missing-key failures and the dialer cannot create calls without VAPI_API_KEY.`
+    });
+  }
+
+  if (config.bulkSchedulerEnabled && !isGhlConfigured()) {
+    actions.push({
+      priority: "high",
+      area: "scheduler",
+      title: "Disable or wire up the bulk scheduler",
+      detail: "Bulk scheduling is enabled but GoHighLevel is not configured, so scheduled runs will keep failing."
+    });
+  }
+
+  if (blockedProspects > 0) {
+    actions.push({
+      priority: blockedProspects >= 10 ? "high" : "medium",
+      area: "prospector",
+      title: "Work down the blocked prospector backlog",
+      detail: `${blockedProspects} prospector leads are blocked and waiting for review or release into the outreach flow.`
+    });
+  }
+
+  if (generatedNotDeployed > 0) {
+    actions.push({
+      priority: "medium",
+      area: "prospector",
+      title: "Deploy generated prospect sites that are still local only",
+      detail: `${generatedNotDeployed} generated sites exist on disk without a deployed URL, which stalls the vision-to-call workflow.`
+    });
+  }
+
+  if (readyForReview > 0 || deployedWithoutScript > 0) {
+    actions.push({
+      priority: "medium",
+      area: "prospector",
+      title: "Finish voice scripting for deployed prospect demos",
+      detail: `${readyForReview} leads are marked ready for review and ${deployedWithoutScript} deployed prospects still lack a voice script.`
+    });
+  }
+
+  if (ghlErrors > 0) {
+    actions.push({
+      priority: "medium",
+      area: "integrations",
+      title: "Clear CRM sync failures before scaling campaigns",
+      detail: `${ghlErrors} leads carry GoHighLevel sync errors, which weakens attribution and follow-up automation.`
+    });
+  }
+
+  if (restartCount >= 3) {
+    actions.push({
+      priority: "medium",
+      area: "runtime",
+      title: "Investigate repeated server restarts",
+      detail: `${restartCount} server start events landed in the last 6 hours, which suggests an unstable local or hosted runtime.`
+    });
+  }
+
+  if (recentErrors.length > 0) {
+    actions.push({
+      priority: "low",
+      area: "runtime",
+      title: "Triage the latest runtime error fingerprints",
+      detail: `${recentErrors.length} error log entries were recorded in the last 24 hours and should be grouped into root-cause buckets.`
+    });
+  }
+
+  const order = { high: 0, medium: 1, low: 2 };
+  return actions
+    .sort((a, b) => order[a.priority] - order[b.priority] || a.title.localeCompare(b.title))
+    .slice(0, 8);
 }
