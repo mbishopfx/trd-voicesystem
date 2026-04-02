@@ -373,6 +373,21 @@
               </div>
 
               <div class="space-y-4">
+                <div class="rounded-xl border border-outline-variant/20 bg-white p-4">
+                  <h4 class="font-headline text-sm font-bold text-on-surface">Jarvis Campaign Steering</h4>
+                  <p class="mt-1 text-xs text-outline">Keep the core TRD consult objective, but steer what Jarvis emphasizes and how the call sounds for this upload.</p>
+                  <div class="mt-4 grid grid-cols-1 gap-4">
+                    <label class="text-[11px] font-bold uppercase tracking-wider text-outline">Campaign Name
+                      <input id="campaignNameInput" type="text" value="Jarvis CSV Campaign" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+                    </label>
+                    <label class="text-[11px] font-bold uppercase tracking-wider text-outline">Message Scope
+                      <textarea id="campaignScopeInput" rows="3" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" placeholder="Example: focus on AI overview visibility, weak entity signals, and what we found on their site."></textarea>
+                    </label>
+                    <label class="text-[11px] font-bold uppercase tracking-wider text-outline">Tone / System Direction
+                      <textarea id="campaignToneInput" rows="3" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" placeholder="Example: direct, casual, low-friction, founder-energy, no fluff."></textarea>
+                    </label>
+                  </div>
+                </div>
                 <div class="flex items-center justify-between rounded-lg border-b border-outline-variant/10 bg-white p-4">
                   <div class="flex items-center gap-3">
                     <div class="h-2 w-2 rounded-full bg-teal-500"></div>
@@ -2293,9 +2308,23 @@
           payloadFiles.push({ fileName: file.name, csvContent: await readFile(file) });
         }
 
-        const data = await postJson("/api/ingest/upload", { files: payloadFiles, runIngest: true });
-        const accepted = (data.ingest?.summaries || []).reduce((sum, row) => sum + (row.accepted || 0), 0);
-        showToast(`Upload complete. accepted=${accepted}`);
+        const campaignName = document.getElementById("campaignNameInput")?.value?.trim() || "Jarvis CSV Campaign";
+        const campaignScope = document.getElementById("campaignScopeInput")?.value?.trim() || "";
+        const toneInstruction = document.getElementById("campaignToneInput")?.value?.trim() || "";
+        const data = await postJson("/api/campaigns/jarvis/upload-run", {
+          files: payloadFiles,
+          campaignName,
+          campaignScope,
+          toneInstruction,
+          trustImportLeads: true
+        });
+        const queued = Number(data?.result?.queued || 0);
+        const assistantId = data?.assistant?.assistantId || "--";
+        showToast(`Jarvis campaign ready. queued=${queued} assistant=${assistantId}`);
+        setText(
+          "ingestSummary",
+          `Jarvis campaign "${campaignName}" queued ${queued} lead(s). Assistant ${assistantId} will keep the TRD consult objective while using your upload-specific scope and tone.`
+        );
         state.files = [];
         const input = document.getElementById("csvInput");
         if (input) input.value = "";

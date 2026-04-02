@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import express, { type Request, type Response } from "express";
 import path from "node:path";
 import { config, effectiveCps, resolvedBookingUrl } from "./config.js";
-import { ingestOnce } from "./ingest.js";
+import { buildLeadFromCsvRow, ingestOnce, parseCsvRows } from "./ingest.js";
 import { inferOutcome, hasPromptInjectionSignals } from "./outcomes.js";
 import { normalizePhone } from "./phone.js";
 import { withState } from "./store.js";
@@ -107,6 +107,7 @@ import {
   startProspectorAutoScheduler
 } from "./prospectorAutoScheduler.js";
 import { getVapiCreditGuardStatus } from "./vapiCredits.js";
+import { buildOperationsSnapshot, buildRecommendedActions } from "./runtimeReadiness.js";
 import {
   deleteVoiceProfile,
   getVoicesDashboard,
@@ -1506,6 +1507,70 @@ function voiceFromTemplate(template?: AgentTemplate): VoiceProfile {
   return "female";
 }
 
+function clipText(value: string | undefined, limit: number, fallback = ""): string {
+  const text = safeString(value) || fallback;
+  return text.slice(0, limit).trim();
+}
+
+function buildJarvisCampaignTemplate(
+  baseTemplate: AgentTemplate,
+  input: { campaignName: string; campaignScope?: string; toneInstruction?: string }
+): AgentTemplate {
+  const campaignScope =
+    clipText(
+      input.campaignScope,
+      280,
+      "Reference that we reviewed their site, found meaningful visibility issues, and want to show them in a free consultation."
+    ) || "Reference that we reviewed their site, found meaningful visibility issues, and want to show them in a free consultation.";
+  const toneInstruction =
+    clipText(
+      input.toneInstruction,
+      280,
+      "Be direct, human, confident, and natural. Skip filler phrases. Sound like a real strategist, not a scripted bot."
+    ) || "Be direct, human, confident, and natural. Skip filler phrases. Sound like a real strategist, not a scripted bot.";
+
+  return normalizeTemplateInput(
+    {
+      ...baseTemplate,
+      name: `Jarvis ${clipText(input.campaignName, 48, "Campaign")}`,
+      description: `${baseTemplate.description} Campaign scope: ${campaignScope}`.slice(0, 320),
+      persona: `${baseTemplate.persona}. Tone direction for this campaign: ${toneInstruction}`.slice(0, 320),
+      objective: `${baseTemplate.objective} On this campaign, anchor the call around this scope: ${campaignScope}`.slice(0, 420),
+      offerSummary:
+        "We reviewed their site and found issues that impact AI visibility and Google authority. The goal is to book a free consultation to show them exactly what to fix.",
+      openingScript:
+        "Hi {{leadFirstName}}, this is Jarvis with True Rank Digital. I was looking at {{leadCompany}}'s site and found a couple things worth showing you. Are you the right person to point that out to?",
+      qualificationQuestions: [
+        "Are you the right person to review growth and visibility opportunities for {{leadCompany}}?",
+        "If we keep it practical, would a free consultation this week be useful to walk through what we found on the site?"
+      ],
+      knowledgeBase: [
+        ...baseTemplate.knowledgeBase,
+        `Campaign scope: ${campaignScope}`,
+        `Tone direction: ${toneInstruction}`,
+        "Always make clear we actually reviewed their site before calling."
+      ],
+      allowedTopics: Array.from(
+        new Set([
+          ...baseTemplate.allowedTopics,
+          "site review findings",
+          "AI overview visibility gaps",
+          "Google authority weaknesses",
+          "free consultation booking"
+        ])
+      ),
+      compliance: Array.from(
+        new Set([
+          ...baseTemplate.compliance,
+          "Do not drift away from the campaign scope supplied for this upload.",
+          "Keep tone aligned to the campaign tone instruction while staying professional."
+        ])
+      )
+    },
+    baseTemplate
+  );
+}
+
 function leadFromTestPayload(body: Record<string, unknown>, normalizedPhone: string, template?: AgentTemplate): Lead {
   const now = nowIso();
   const firstName = safeString(body.firstName);
@@ -2494,6 +2559,199 @@ export function createServer() {
     });
   });
 
+  app.post("/api/campaigns/jarvis/upload-run", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const filesRaw = Array.isArray(body.files) ? body.files : [body];
+    const files = filesRaw
+      .map((item) => asObject(item))
+      .filter((item): item is Record<string, unknown> => Boolean(item))
+      .map((item) => ({
+        fileName: safeString(item.fileName) || "upload.csv",
+        csvContent: typeof item.csvContent === "string" ? item.csvContent : ""
+      }))
+      .filter((item) => item.csvContent.trim().length > 0);
+
+    if (files.length === 0) {
+      res.status(400).json({ ok: false, error: "Provide files[].fileName and files[].csvContent" });
+      return;
+    }
+
+    const campaignName = clipText(safeString(body.campaignName), 120, "Jarvis CSV Campaign") || "Jarvis CSV Campaign";
+    const campaignScope = clipText(
+      safeString(body.campaignScope),
+      280,
+      "Reference that we reviewed their site, found visibility issues, and want to show them in a free consultation."
+    );
+    const toneInstruction = clipText(
+      safeString(body.toneInstruction),
+      280,
+      "Be direct, natural, and consultative. Skip filler phrases and sound like a real strategist."
+    );
+    const trustImportLeads = asOptionalBool(body.trustImportLeads) ?? true;
+
+    const baseTemplate = (await getActiveTemplate()) || createDefaultTemplate("Jarvis Campaign Base");
+    const campaignTemplate = buildJarvisCampaignTemplate(baseTemplate, {
+      campaignName,
+      campaignScope,
+      toneInstruction
+    });
+
+    let createdAssistant:
+      | {
+          assistantId: string;
+          assistantName?: string;
+        }
+      | undefined;
+
+    try {
+      const created = await createVapiAssistantFromTemplate(campaignTemplate, {
+        assistantName: `Jarvis ${campaignName}`.slice(0, 40)
+      });
+      createdAssistant = {
+        assistantId: created.id,
+        assistantName: created.name
+      };
+    } catch (error) {
+      if (error instanceof VapiAssistantError) {
+        res.status(500).json({ ok: false, error: error.message, status: error.status, details: error.body });
+        return;
+      }
+      res.status(500).json({ ok: false, error: String(error) });
+      return;
+    }
+
+    const result = {
+      uploadedFiles: files.length,
+      totalRows: 0,
+      queued: 0,
+      blocked: 0,
+      invalid: 0,
+      duplicates: 0
+    };
+
+    await withState((state) => {
+      const activePhones = new Set(
+        Object.values(state.leads)
+          .filter((lead) => lead.status === "queued" || lead.status === "retry" || lead.status === "dialing")
+          .map((lead) => normalizePhone(lead.phone || ""))
+          .filter((value): value is string => Boolean(value))
+      );
+
+      for (const file of files) {
+        const rows = parseCsvRows(file.csvContent);
+        result.totalRows += rows.length;
+
+        for (let i = 0; i < rows.length; i += 1) {
+          const row = rows[i];
+          const built = buildLeadFromCsvRow(row, file.fileName, i + 2, {
+            trustImportLeads
+          });
+
+          if (!built) {
+            result.invalid += 1;
+            continue;
+          }
+
+          const findings = built.findings || campaignScope;
+          const noteParts = [
+            built.notes,
+            `Jarvis campaign upload: ${campaignName}`,
+            `Scope: ${campaignScope}`,
+            `Tone: ${toneInstruction}`,
+            `Assistant: ${createdAssistant?.assistantId || ""}`
+          ].filter(Boolean);
+          const existing = state.leads[built.id];
+
+          if (existing) {
+            existing.firstName = built.firstName || existing.firstName;
+            existing.lastName = built.lastName || existing.lastName;
+            existing.company = built.company || existing.company;
+            existing.email = built.email || existing.email;
+            existing.timezone = built.timezone || existing.timezone;
+            existing.campaign = campaignName;
+            existing.sourceFile = file.fileName;
+            existing.sourceRow = i + 2;
+            existing.findings = findings || existing.findings;
+            existing.notes = noteParts.join(" | ").slice(0, 1200);
+            existing.assistantIdOverride = createdAssistant?.assistantId || existing.assistantIdOverride;
+
+            if (existing.dnc || built.dnc) {
+              existing.dnc = true;
+              existing.status = "blocked";
+              existing.nextAttemptAt = undefined;
+              result.blocked += 1;
+            } else if (activePhones.has(built.phone) && existing.status !== "blocked") {
+              result.duplicates += 1;
+            } else {
+              existing.dnc = false;
+              existing.optIn = true;
+              existing.status = "queued";
+              existing.attempts = 0;
+              existing.nextAttemptAt = nowIso();
+              existing.lastError = undefined;
+              existing.callId = undefined;
+              existing.callAttemptedAt = undefined;
+              existing.callEndedAt = undefined;
+              existing.outcome = undefined;
+              existing.transcript = undefined;
+              existing.transcriptSummary = undefined;
+              existing.recordingUrl = undefined;
+              result.queued += 1;
+              activePhones.add(built.phone);
+            }
+
+            existing.updatedAt = nowIso();
+            continue;
+          }
+
+          const lead: Lead = {
+            ...built,
+            campaign: campaignName,
+            sourceFile: file.fileName,
+            sourceRow: i + 2,
+            findings,
+            notes: noteParts.join(" | ").slice(0, 1200),
+            assistantIdOverride: createdAssistant?.assistantId,
+            optIn: true,
+            dnc: Boolean(built.dnc),
+            status: built.dnc ? "blocked" : "queued",
+            attempts: 0,
+            nextAttemptAt: built.dnc ? undefined : nowIso()
+          };
+
+          state.leads[lead.id] = lead;
+          if (lead.status === "blocked") {
+            result.blocked += 1;
+          } else if (activePhones.has(lead.phone)) {
+            result.duplicates += 1;
+          } else {
+            result.queued += 1;
+            activePhones.add(lead.phone);
+          }
+        }
+      }
+    });
+
+    runtimeInfo("agent", "jarvis csv campaign uploaded", {
+      campaignName,
+      assistantId: createdAssistant?.assistantId || "",
+      totalRows: result.totalRows,
+      queued: result.queued,
+      blocked: result.blocked,
+      invalid: result.invalid,
+      duplicates: result.duplicates
+    });
+
+    res.json({
+      ok: true,
+      campaignName,
+      campaignScope,
+      toneInstruction,
+      assistant: createdAssistant,
+      result
+    });
+  });
+
   app.post("/api/ingest/run", async (_req: Request, res: Response) => {
     const summaries = await ingestOnce();
     const leads = await withState((state) => Object.values(state.leads).map((lead) => ({ ...lead })));
@@ -3277,6 +3535,15 @@ export function createServer() {
       return computeAnalyticsSummary(Object.values(state.leads));
     });
     res.json({ ok: true, summary });
+  });
+
+  app.get("/api/analytics/opportunities", async (_req: Request, res: Response) => {
+    const leads = await withState((state) => Object.values(state.leads).map((lead) => ({ ...lead })));
+    const logs = listRuntimeLogs({ limit: 1000 });
+    const summary = computeAnalyticsSummary(leads);
+    const snapshot = buildOperationsSnapshot(leads, logs);
+    const actions = buildRecommendedActions(leads, logs);
+    res.json({ ok: true, summary, snapshot, actions });
   });
 
   app.get("/api/analytics/assistants", async (req: Request, res: Response) => {
