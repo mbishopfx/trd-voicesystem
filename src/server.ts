@@ -30,6 +30,7 @@ import {
 } from "./prospectorPhases.js";
 import { canWriteProspectorRecords, listProspectorPhaseRecords } from "./prospectorRecords.js";
 import { computeAnalyticsSummary } from "./analytics.js";
+import { ensureLeadBdcWorkflow, getBdcAutomationStatus, processDueBdcActions } from "./bdcAutomations.js";
 import {
   exportRetargetBuckets,
   noContactFromOutcome,
@@ -2369,6 +2370,22 @@ export function createServer() {
     res.json({ ok: true, ...status });
   });
 
+  app.get("/api/bdc/status", async (_req: Request, res: Response) => {
+    const status = await getBdcAutomationStatus();
+    res.json({ ok: true, status });
+  });
+
+  app.post("/api/bdc/run-due", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    try {
+      const result = await processDueBdcActions(asOptionalInt(body.maxActions, 1, 100));
+      const status = await getBdcAutomationStatus();
+      res.json({ ok: true, result, status });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   app.post("/api/bulk-scheduler/toggle", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
     const enabled = asOptionalBool(body.enabled);
@@ -2762,16 +2779,17 @@ export function createServer() {
               existing.outcome = undefined;
               existing.transcript = undefined;
               existing.transcriptSummary = undefined;
-              existing.recordingUrl = undefined;
-              result.queued += 1;
-              activePhones.add(built.phone);
-            }
-
-            existing.updatedAt = nowIso();
-            continue;
+            existing.recordingUrl = undefined;
+            result.queued += 1;
+            activePhones.add(built.phone);
           }
 
-          const lead: Lead = {
+          ensureLeadBdcWorkflow(existing);
+          existing.updatedAt = nowIso();
+          continue;
+        }
+
+          const lead: Lead = ensureLeadBdcWorkflow({
             ...built,
             campaign: campaignName,
             sourceFile: file.fileName,
@@ -2784,7 +2802,7 @@ export function createServer() {
             status: built.dnc ? "blocked" : "queued",
             attempts: 0,
             nextAttemptAt: built.dnc ? undefined : nowIso()
-          };
+          });
 
           state.leads[lead.id] = lead;
           if (lead.status === "blocked") {

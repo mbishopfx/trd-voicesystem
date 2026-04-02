@@ -7,6 +7,23 @@ export type LeadStatus =
   | "failed"
   | "blocked";
 
+export type BdcTouchChannel = "call" | "sms" | "email";
+export type BdcTouchStatus = "pending" | "processing" | "completed" | "skipped" | "failed";
+
+export interface BdcTouch {
+  id: string;
+  channel: BdcTouchChannel;
+  templateKey: string;
+  dueAt: string;
+  status: BdcTouchStatus;
+  dayOffset: number;
+  sequence: number;
+  executedAt?: string;
+  outcome?: string;
+  preview?: string;
+  error?: string;
+}
+
 export interface Lead {
   id: string;
   phone: string;
@@ -93,6 +110,11 @@ export interface Lead {
   smsLastSentAt?: string;
   smsLastType?: string;
   smsLastError?: string;
+  bdcAutomationEnabled?: boolean;
+  bdcWorkflowVersion?: string;
+  bdcTouches?: BdcTouch[];
+  bdcLastTouchAt?: string;
+  bdcNextTouchAt?: string;
   ghlContactId?: string;
   ghlSyncedAt?: string;
   ghlLastError?: string;

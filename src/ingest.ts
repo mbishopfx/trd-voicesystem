@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parse } from "csv-parse/sync";
+import { ensureLeadBdcWorkflow } from "./bdcAutomations.js";
 import { config } from "./config.js";
 import { normalizePhone } from "./phone.js";
 import { withState } from "./store.js";
@@ -253,7 +254,7 @@ export function buildLeadFromCsvRow(
     )
   );
 
-  return {
+  return ensureLeadBdcWorkflow({
     id: hashShort(phone),
     phone,
     firstName,
@@ -289,7 +290,7 @@ export function buildLeadFromCsvRow(
     nextAttemptAt: status === "queued" ? now : undefined,
     createdAt: now,
     updatedAt: now
-  };
+  });
 }
 
 function shouldReactivateBlockedLead(existing: Lead, incoming: Lead, options?: IngestOptions): boolean {
@@ -320,6 +321,7 @@ function reactivateLeadFromImport(existing: Lead, incoming: Lead): void {
   existing.lastError = undefined;
   existing.nextAttemptAt = now;
   existing.updatedAt = now;
+  ensureLeadBdcWorkflow(existing);
 }
 
 async function listCsvFiles(): Promise<string[]> {

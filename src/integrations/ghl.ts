@@ -403,6 +403,8 @@ function compactTags(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((v): v is string => Boolean(v && v.trim())).map((v) => v.trim()))];
 }
 
+export { compactTags };
+
 function normalizeOutcomeTag(value?: string): string | undefined {
   if (!value) return undefined;
   const base = value.split(";")[0] || "";
@@ -555,6 +557,44 @@ export async function logBulkSchedulerQueuedContact(input: BulkSchedulerGhlLogIn
     runtimeError("ghl", "bulk scheduler queue log failed", error, {
       leadId: input.lead.id,
       runId: input.runId
+    });
+    return { synced: false, error: String(error) };
+  }
+}
+
+export async function logLeadNoteToGhl(input: {
+  lead: Lead;
+  note: string;
+  tags?: string[];
+  upsertIfNeeded?: boolean;
+}): Promise<GhlSyncResult> {
+  const c = creds();
+  if (!c) {
+    return { synced: false, error: "GHL not configured" };
+  }
+
+  try {
+    const tags = compactTags(input.tags || []);
+    let contactId = input.lead.ghlContactId;
+    if (!contactId && input.upsertIfNeeded) {
+      contactId = await upsertContact(c, input.lead, tags);
+    }
+    if (!contactId) {
+      return { synced: false, error: "No GHL contactId and upsertIfNeeded is false" };
+    }
+    if (tags.length > 0) {
+      await addTags(c, contactId, tags);
+    }
+    await addNote(c, contactId, input.note);
+    runtimeInfo("ghl", "lead note logged", {
+      leadId: input.lead.id,
+      contactId,
+      tags: tags.join(",")
+    });
+    return { synced: true, contactId };
+  } catch (error) {
+    runtimeError("ghl", "lead note log failed", error, {
+      leadId: input.lead.id
     });
     return { synced: false, error: String(error) };
   }

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ensureLeadBdcWorkflow } from "./bdcAutomations.js";
 import { config } from "./config.js";
 import {
   disableDatabaseState,
@@ -381,7 +382,7 @@ async function queueContactsAsLeads(
       const createdAt = nowIso();
       const leadId = `ghl-random-${hashShort(`${runId}|${contact.id || normalizedPhone}`)}`;
 
-      const lead: Lead = {
+      const lead: Lead = ensureLeadBdcWorkflow({
         id: leadId,
         phone: normalizedPhone,
         firstName,
@@ -401,7 +402,7 @@ async function queueContactsAsLeads(
         ghlContactId: contact.id || undefined,
         createdAt,
         updatedAt: createdAt
-      };
+      });
 
       state.leads[lead.id] = lead;
       queued.push({ lead: { ...lead }, contact });

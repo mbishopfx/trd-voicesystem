@@ -1,4 +1,5 @@
 import { config } from "./config.js";
+import { processDueBdcActions } from "./bdcAutomations.js";
 import { ingestOnce } from "./ingest.js";
 import { createServer } from "./server.js";
 import { effectiveCps } from "./config.js";
@@ -47,6 +48,15 @@ async function startDialer(): Promise<void> {
   );
 
   while (true) {
+    try {
+      const due = await processDueBdcActions();
+      if (due.processed > 0) {
+        runtimeInfo("scheduler", "bdc due actions processed", due);
+      }
+    } catch (error) {
+      runtimeError("scheduler", "bdc action loop failed", error);
+    }
+
     while (inFlight < config.maxConcurrentDials && limiter.tryTake(1)) {
       inFlight += 1;
       dialOneLead()

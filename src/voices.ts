@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { ensureLeadBdcWorkflow } from "./bdcAutomations.js";
 import { config } from "./config.js";
 import {
   disableDatabaseState,
@@ -509,7 +510,7 @@ async function queueContactsForProfile(
       const createdAt = nowIso();
       const leadId = `voice-${profile.id}-${hashShort(`${runId}|${contact.id || normalizedPhone}`)}`;
 
-      const lead: Lead = {
+      const lead: Lead = ensureLeadBdcWorkflow({
         id: leadId,
         phone: normalizedPhone,
         firstName,
@@ -533,7 +534,7 @@ async function queueContactsForProfile(
         ghlContactId: contact.id || undefined,
         createdAt,
         updatedAt: createdAt
-      };
+      });
 
       state.leads[lead.id] = lead;
       queued.push({ lead: { ...lead }, contact });
@@ -989,6 +990,7 @@ export async function runVoiceCsvCampaign(
           existing.voiceProfileId = profile.id;
           existing.voiceProfileName = profile.name;
           existing.optIn = true;
+          ensureLeadBdcWorkflow(existing);
 
           if (existing.dnc) {
             existing.status = "blocked";
@@ -1014,7 +1016,7 @@ export async function runVoiceCsvCampaign(
           continue;
         }
 
-        const lead: Lead = {
+        const lead: Lead = ensureLeadBdcWorkflow({
           ...built,
           campaign: campaignName,
           sourceFile: "voices-campaign",
@@ -1030,7 +1032,7 @@ export async function runVoiceCsvCampaign(
           status: built.dnc ? "blocked" : "queued",
           attempts: 0,
           nextAttemptAt: built.dnc ? undefined : now
-        };
+        });
         store.leads[lead.id] = lead;
         if (lead.status === "queued") {
           queued += 1;
