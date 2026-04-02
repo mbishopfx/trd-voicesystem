@@ -95,6 +95,28 @@ interface RunVoiceCsvCampaignOptions {
 
 const STATE_KEY = "voices_registry";
 const MAX_RUN_LOGS = 140;
+const MANAGED_DEFAULT_PROFILES: Array<Partial<VoiceProfile> & { id: string; name: string }> = [
+  {
+    id: "voice-jose",
+    name: "Jose",
+    ownerName: "Jose",
+    assistantId: "a9eaf7cd-b6af-493f-a024-451e97ecba6c",
+    calendarUrl: "https://agency.truerankdigital.com/widget/bookings/jose-perdomo",
+    campaignName: "Voices · Jose",
+    firstMessage:
+      "Hi {{leadFirstName}}, this is Jose with True Rank Digital. We reviewed {{leadCompany}}'s site and found a few things we can fix in the AI search game. Are you the owner?",
+    systemPrompt:
+      "You are Jose with True Rank Digital. Speak naturally, concise, and human. Do not perform a full audit on the phone. Tell them we reviewed their site, found a few things we can fix, and have a presentation ready to show them if they have time for a meeting this week. Keep the call focused on booking a free consultation. If they are interested, tell them you will send a follow-up SMS with the booking link and that a team member may reach out before the meeting. Skip filler phrases like thanks for asking. Keep the pacing natural and low-latency.",
+    llmProvider: "openai",
+    llmModel: "gpt-4o-mini",
+    llmTemperature: 0.35,
+    transcriberProvider: "deepgram",
+    transcriberModel: "nova-2-phonecall",
+    defaultBatchSize: 30,
+    defaultSamplePoolSize: 300,
+    active: true
+  }
+];
 
 let dbFallbackWarned = false;
 let memoryFallbackWarned = false;
@@ -268,6 +290,21 @@ function normalizeState(state: VoicesState): VoicesState {
   state.profiles ??= {};
   state.runs = Array.isArray(state.runs) ? state.runs.slice(-MAX_RUN_LOGS) : [];
   state.updatedAt = state.updatedAt || nowIso();
+  for (const managed of MANAGED_DEFAULT_PROFILES) {
+    const existing = state.profiles[managed.id];
+    state.profiles[managed.id] = normalizeProfile({
+      ...managed,
+      ...(existing || {}),
+      assistantId: safeTrim(existing?.assistantId) || safeTrim(managed.assistantId),
+      calendarUrl: safeTrim(existing?.calendarUrl) || safeTrim(managed.calendarUrl),
+      firstMessage: safeTrim(existing?.firstMessage) || safeTrim(managed.firstMessage),
+      systemPrompt: safeTrim(existing?.systemPrompt) || safeTrim(managed.systemPrompt),
+      campaignName: safeTrim(existing?.campaignName) || safeTrim(managed.campaignName),
+      ownerName: safeTrim(existing?.ownerName) || safeTrim(managed.ownerName),
+      id: managed.id,
+      name: safeTrim(existing?.name) || managed.name
+    });
+  }
   for (const [id, profile] of Object.entries(state.profiles)) {
     state.profiles[id] = normalizeProfile({ ...profile, id, name: profile.name || "Voice Profile" });
   }
