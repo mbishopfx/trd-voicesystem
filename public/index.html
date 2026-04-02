@@ -974,22 +974,46 @@
             <div class="rounded-2xl bg-surface-container-lowest p-4 shadow-sm lg:sticky lg:top-24">
               <div class="mb-3 flex flex-col gap-1 border-b border-outline-variant/20 px-2 pb-3 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p class="text-[10px] font-bold uppercase tracking-widest text-outline">Selected Contact</p>
-                  <p id="smsConversationHeader" class="text-sm font-semibold text-on-surface">Select a conversation</p>
+                  <p class="text-[10px] font-bold uppercase tracking-widest text-outline">Chat Window</p>
+                  <p id="smsConversationLaunchHeader" class="text-sm font-semibold text-on-surface">Select a conversation</p>
                 </div>
-                <p id="smsConversationMeta" class="text-xs text-outline">--</p>
+                <p id="smsConversationLaunchMeta" class="text-xs text-outline">--</p>
               </div>
-              <div id="smsConversationBody" class="no-scrollbar max-h-[calc(100vh-22rem)] min-h-[420px] space-y-2 overflow-auto rounded-xl border border-outline-variant/20 bg-surface p-3">
-                <p class="text-sm text-outline">Select a conversation to view message history.</p>
-              </div>
-              <div class="mt-4 space-y-2">
-                <textarea id="smsReplyInput" rows="3" placeholder="Type a reply..." class="w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm"></textarea>
-                <div class="flex justify-end">
-                  <button id="smsReplyBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Send Reply</button>
+              <div class="rounded-xl border border-outline-variant/20 bg-surface p-5">
+                <p class="text-sm text-outline">Click any conversation on the left to open a dedicated chat window with message history and reply controls.</p>
+                <div class="mt-4">
+                  <button id="smsOpenSelectedThreadBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Open Selected Chat</button>
                 </div>
               </div>
             </div>
           </section>
+
+          <div id="smsChatModal" class="fixed inset-0 z-[70] hidden">
+            <div id="smsChatBackdrop" class="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"></div>
+            <div class="absolute inset-0 flex items-start justify-end p-3 md:p-6">
+              <section class="flex h-[min(88vh,820px)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-outline-variant/20 bg-surface-container-lowest shadow-2xl">
+                <div class="flex items-start justify-between gap-4 border-b border-outline-variant/20 px-5 py-4">
+                  <div>
+                    <p class="text-[10px] font-bold uppercase tracking-widest text-outline">SMS Chat</p>
+                    <p id="smsConversationHeader" class="text-sm font-semibold text-on-surface">Select a conversation</p>
+                    <p id="smsConversationMeta" class="mt-1 text-xs text-outline">--</p>
+                  </div>
+                  <button id="smsChatCloseBtn" class="rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Close</button>
+                </div>
+                <div id="smsConversationBody" class="no-scrollbar flex-1 space-y-2 overflow-auto bg-surface px-4 py-4">
+                  <p class="text-sm text-outline">Select a conversation to view message history.</p>
+                </div>
+                <div class="border-t border-outline-variant/20 bg-surface-container-low px-4 py-4">
+                  <div class="space-y-2">
+                    <textarea id="smsReplyInput" rows="4" placeholder="Type a reply..." class="w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm"></textarea>
+                    <div class="flex justify-end">
+                      <button id="smsReplyBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Send Reply</button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
 
           <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1087,7 +1111,8 @@
           messages: [],
           selectedPhone: "",
           threadMessages: {},
-          loadingPhone: ""
+          loadingPhone: "",
+          chatOpen: false
         },
         smsCampaignStatus: null,
         smsReplyScanInFlight: false,
@@ -1439,6 +1464,14 @@
         }
       }
 
+      function setSmsChatWindow(open) {
+        state.smsInbox.chatOpen = Boolean(open);
+        const modal = document.getElementById("smsChatModal");
+        if (!modal) return;
+        modal.classList.toggle("hidden", !state.smsInbox.chatOpen);
+        document.body.classList.toggle("overflow-hidden", state.smsInbox.chatOpen);
+      }
+
       function renderSmsThreads() {
         const root = document.getElementById("smsThreadList");
         if (!root) return;
@@ -1472,6 +1505,9 @@
       }
 
       function renderSmsConversation() {
+        const launchHeader = document.getElementById("smsConversationLaunchHeader");
+        const launchMeta = document.getElementById("smsConversationLaunchMeta");
+        const openBtn = document.getElementById("smsOpenSelectedThreadBtn");
         const header = document.getElementById("smsConversationHeader");
         const meta = document.getElementById("smsConversationMeta");
         const body = document.getElementById("smsConversationBody");
@@ -1490,6 +1526,9 @@
           });
 
         if (!selected) {
+          if (launchHeader) launchHeader.textContent = "Select a conversation";
+          if (launchMeta) launchMeta.textContent = "--";
+          if (openBtn instanceof HTMLButtonElement) openBtn.disabled = true;
           header.textContent = "Select a conversation";
           meta.textContent = "--";
           body.innerHTML = `<p class="text-sm text-outline">Select a conversation to view message history.</p>`;
@@ -1497,6 +1536,9 @@
           return;
         }
 
+        if (launchHeader) launchHeader.textContent = selected;
+        if (launchMeta) launchMeta.textContent = twilioNumber ? `Ready to open chat window` : "--";
+        if (openBtn instanceof HTMLButtonElement) openBtn.disabled = false;
         header.textContent = selected;
         meta.textContent = twilioNumber ? `Your Twilio number: ${twilioNumber}` : "--";
 
@@ -1589,6 +1631,7 @@
           state.smsInbox.selectedPhone = "";
           state.smsInbox.threadMessages = {};
           state.smsInbox.loadingPhone = "";
+          state.smsInbox.chatOpen = false;
           renderSmsThreads();
           renderSmsConversation();
           renderSmsInboxStatus(`Inbox unavailable: ${String(error)}`);
@@ -2025,6 +2068,9 @@
 
       function setActiveTab(tab, pushHash = true) {
         if (!TABS.includes(tab)) return;
+        if (tab !== "sms-inbox") {
+          setSmsChatWindow(false);
+        }
         state.activeTab = tab;
 
         document.querySelectorAll("[data-page]").forEach((node) => {
@@ -2959,6 +3005,7 @@
           if (!phoneEncoded) return;
           const phone = decodeURIComponent(phoneEncoded);
           state.smsInbox.selectedPhone = String(phone || "").trim();
+          setSmsChatWindow(true);
           renderSmsThreads();
           renderSmsConversation();
           try {
@@ -2984,6 +3031,36 @@
             await sendSmsReplyFromInbox();
           } catch (error) {
             showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("smsOpenSelectedThreadBtn")?.addEventListener("click", async () => {
+          const phone = selectedSmsThreadPhone();
+          if (!phone) {
+            showToast("Select a conversation first.", true);
+            return;
+          }
+          setSmsChatWindow(true);
+          renderSmsConversation();
+          try {
+            await loadSmsThread(phone, true);
+          } catch {
+            // handled in loader
+          }
+        });
+
+        document.getElementById("smsChatCloseBtn")?.addEventListener("click", () => {
+          setSmsChatWindow(false);
+        });
+
+        document.getElementById("smsChatBackdrop")?.addEventListener("click", () => {
+          setSmsChatWindow(false);
+        });
+
+        window.addEventListener("keydown", (event) => {
+          if (!(event instanceof KeyboardEvent)) return;
+          if (event.key === "Escape" && state.smsInbox.chatOpen) {
+            setSmsChatWindow(false);
           }
         });
 
