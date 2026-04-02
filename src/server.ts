@@ -2526,7 +2526,12 @@ export function createServer() {
         csvContent,
         fileName: safeString(body.fileName),
         campaignName: safeString(body.campaignName),
-        trustImportLeads: asOptionalBool(body.trustImportLeads)
+        trustImportLeads: asOptionalBool(body.trustImportLeads),
+        campaignScope: safeString(body.campaignScope),
+        toneInstruction: safeString(body.toneInstruction),
+        customPitch: safeString(body.customPitch) || safeString(body.systemPrompt),
+        assistantId: safeString(body.assistantId),
+        spinUpCampaignAssistant: asOptionalBool(body.spinUpCampaignAssistant)
       });
       const status = await getVoicesDashboard();
       res.json({ ok: true, run, status });

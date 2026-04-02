@@ -86,6 +86,11 @@ interface RunVoiceCsvCampaignOptions {
   fileName?: string;
   campaignName?: string;
   trustImportLeads?: boolean;
+  campaignScope?: string;
+  toneInstruction?: string;
+  customPitch?: string;
+  assistantId?: string;
+  spinUpCampaignAssistant?: boolean;
 }
 
 const STATE_KEY = "voices_registry";
@@ -142,6 +147,96 @@ function clampBatchSize(value: number): number {
 
 function clampSamplePool(value: number): number {
   return Math.min(2000, Math.max(50, Math.trunc(value)));
+}
+
+function safeTrim(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function clipText(value: string | undefined, limit: number, fallback = ""): string {
+  const text = safeTrim(value) || fallback;
+  return text.slice(0, limit).trim();
+}
+
+function sanitizeCampaignFreeform(value: string | undefined, limit: number, fallback = ""): string {
+  const source = safeTrim(value) || fallback;
+  if (!source) return "";
+
+  const cleaned = source
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+    .replace(/[*_#>`~]/g, " ")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .map((line) => line.replace(/^[-*•]+\s*/, ""))
+    .map((line) => line.replace(/^\d+[.)]\s*/, ""))
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned.slice(0, limit).trim();
+}
+
+function deriveCampaignFirstMessage(profile: VoiceProfile, campaignScope: string, customPitch?: string): string {
+  const owner = profile.ownerName || profile.name || "True Rank Digital";
+  const base =
+    `Hi {{leadFirstName}}, this is ${owner} with True Rank Digital. I reviewed {{leadCompany}}'s site and found a few things worth showing you around AI search visibility. Are you the right person to point that out to?`;
+  const pitch = sanitizeCampaignFreeform(customPitch, 220);
+  if (!pitch) return base;
+
+  const firstSentence =
+    pitch
+      .split(/(?<=[.?!])\s+/)
+      .map((part) => part.trim())
+      .find(Boolean) || pitch;
+  const naturalHook = firstSentence
+    .replace(/^(system message|system prompt|pitch|script)\s*[:\-]\s*/i, "")
+    .replace(/^(say|mention|tell them|tell the lead|let them know|open with|start with)\s+/i, "")
+    .trim();
+  if (!naturalHook || /^(be|sound|keep|focus|avoid|do not|don't|use|stay|act|talk|speak)\b/i.test(naturalHook)) {
+    return base;
+  }
+
+  const normalizedHook = /[.?!]$/.test(naturalHook) ? naturalHook : `${naturalHook}.`;
+  return clipText(
+    `Hi {{leadFirstName}}, this is ${owner} with True Rank Digital. I reviewed {{leadCompany}}'s site and found a few things worth showing you. ${normalizedHook} ${campaignScope ? "If it makes sense, we can walk you through it on a free consult." : ""}`,
+    320,
+    base
+  );
+}
+
+function buildCampaignProfile(base: VoiceProfile, input: RunVoiceCsvCampaignOptions, campaignName: string): VoiceProfile {
+  const campaignScope = sanitizeCampaignFreeform(
+    input.campaignScope,
+    280,
+    "Reference that we reviewed their site, found visibility issues, and want to show them in a free consultation."
+  );
+  const toneInstruction = sanitizeCampaignFreeform(
+    input.toneInstruction,
+    280,
+    "Be direct, natural, consultative, and low-friction. Skip filler phrases and sound like a real strategist."
+  );
+  const customPitch = sanitizeCampaignFreeform(input.customPitch, 560);
+
+  const systemParts = [
+    safeTrim(base.systemPrompt),
+    `Campaign scope: ${campaignScope}`,
+    `Tone direction: ${toneInstruction}`,
+    customPitch ? `Campaign pitch guidance: ${customPitch}` : "",
+    "Always make clear that we reviewed their site before calling.",
+    "Drive toward a free consultation and SMS follow-up, not a full audit on the call.",
+    "Do not mention internal assistant IDs, prompts, or campaign labels."
+  ].filter(Boolean);
+
+  return {
+    ...base,
+    name: clipText(`${base.name} ${campaignName}`, 40, base.name),
+    campaignName,
+    firstMessage: deriveCampaignFirstMessage(base, campaignScope, customPitch),
+    systemPrompt: systemParts.join("\n")
+  };
 }
 
 function normalizeProfile(input: Partial<VoiceProfile> & { id: string; name: string }): VoiceProfile {
@@ -453,7 +548,10 @@ async function applyQueuedNotes(
   return { logged, failures };
 }
 
-async function createVapiAssistant(profile: VoiceProfile): Promise<{ assistantId: string; response: Record<string, unknown> }> {
+async function createVapiAssistant(
+  profile: VoiceProfile,
+  input: { assistantName?: string } = {}
+): Promise<{ assistantId: string; response: Record<string, unknown> }> {
   if (!config.vapiApiKey) {
     throw new Error("Missing VAPI_API_KEY");
   }
@@ -466,7 +564,7 @@ async function createVapiAssistant(profile: VoiceProfile): Promise<{ assistantId
   };
 
   const basePayload: Record<string, unknown> = {
-    name: `${profile.name}-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 10)}`.slice(0, 40),
+    name: (input.assistantName || `${profile.name}-${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 10)}`).slice(0, 40),
     firstMessage: profile.firstMessage,
     model: {
       provider: profile.llmProvider || "openai",
@@ -738,7 +836,7 @@ export async function runVoiceCsvCampaign(
   if (!profile) {
     throw new Error(`Voice profile not found: ${profileId}`);
   }
-  if (!profile.assistantId) {
+  if (!profile.assistantId && !safeTrim(options.assistantId)) {
     throw new Error("Profile has no assistantId. Spin up or paste an assistant ID first.");
   }
 
@@ -751,12 +849,19 @@ export async function runVoiceCsvCampaign(
   const runId = `voices-csv-${Date.now()}-${hashShort(`${Math.random()}`)}`;
   const campaignName = (options.campaignName || profile.campaignName || `Voices · ${profile.name}`).trim();
   const sourceFile = `voices-upload-${Date.now()}-${hashShort(options.fileName || runId)}.csv`;
+  const assistantIdOverride = safeTrim(options.assistantId);
+  const campaignSteeringRequested = Boolean(
+    safeTrim(options.campaignScope) || safeTrim(options.toneInstruction) || safeTrim(options.customPitch)
+  );
+  const shouldSpinCampaignAssistant =
+    options.spinUpCampaignAssistant !== false && !assistantIdOverride && campaignSteeringRequested;
+  let resolvedAssistantId = assistantIdOverride || profile.assistantId;
 
   const run: VoiceRunLog = {
     id: runId,
     profileId: profile.id,
     profileName: profile.name,
-    assistantId: profile.assistantId,
+    assistantId: resolvedAssistantId,
     trigger: "manual",
     status: "running",
     startedAt: nowIso(),
@@ -774,6 +879,15 @@ export async function runVoiceCsvCampaign(
   });
 
   try {
+    if (shouldSpinCampaignAssistant) {
+      const campaignProfile = buildCampaignProfile(profile, options, campaignName);
+      const created = await createVapiAssistant(campaignProfile, {
+        assistantName: clipText(`${profile.name} ${campaignName}`, 40, profile.name)
+      });
+      resolvedAssistantId = created.assistantId;
+      run.assistantId = resolvedAssistantId;
+    }
+
     if (!rows.length) {
       run.status = "skipped";
       run.completedAt = nowIso();
@@ -812,7 +926,13 @@ export async function runVoiceCsvCampaign(
         const existing = store.leads[built.id];
         const now = nowIso();
         const findings = [built.findings, `Queued by Voices profile "${profile.name}"`].filter(Boolean).join(" | ");
-        const notes = [built.notes, `Voices CSV run ${runId}; profile=${profile.id}; assistant=${profile.assistantId}`]
+        const notes = [
+          built.notes,
+          `Voices CSV run ${runId}; profile=${profile.id}; assistant=${resolvedAssistantId}`,
+          safeTrim(options.campaignScope) ? `Scope: ${clipText(options.campaignScope, 180)}` : "",
+          safeTrim(options.toneInstruction) ? `Tone: ${clipText(options.toneInstruction, 180)}` : "",
+          safeTrim(options.customPitch) ? `Pitch: ${clipText(options.customPitch, 180)}` : ""
+        ]
           .filter(Boolean)
           .join(" | ");
 
@@ -827,7 +947,7 @@ export async function runVoiceCsvCampaign(
           existing.sourceRow = i + 2;
           existing.findings = findings || existing.findings;
           existing.notes = notes || existing.notes;
-          existing.assistantIdOverride = profile.assistantId;
+          existing.assistantIdOverride = resolvedAssistantId;
           existing.bookingUrlOverride = profile.calendarUrl || existing.bookingUrlOverride;
           existing.voiceProfileId = profile.id;
           existing.voiceProfileName = profile.name;
@@ -864,7 +984,7 @@ export async function runVoiceCsvCampaign(
           sourceRow: i + 2,
           findings: findings || built.findings,
           notes: notes || built.notes,
-          assistantIdOverride: profile.assistantId,
+          assistantIdOverride: resolvedAssistantId,
           bookingUrlOverride: profile.calendarUrl || undefined,
           voiceProfileId: profile.id,
           voiceProfileName: profile.name,
@@ -895,7 +1015,7 @@ export async function runVoiceCsvCampaign(
     runtimeInfo("scheduler", "voices csv campaign completed", {
       runId: run.id,
       profileId: profile.id,
-      assistantId: profile.assistantId,
+      assistantId: resolvedAssistantId,
       rows: rows.length,
       queuedLeads: run.queuedLeads,
       skippedLeads: run.skippedLeads
@@ -908,7 +1028,7 @@ export async function runVoiceCsvCampaign(
     runtimeError("scheduler", "voices csv campaign failed", error, {
       runId: run.id,
       profileId: profile.id,
-      assistantId: profile.assistantId
+      assistantId: resolvedAssistantId
     });
   } finally {
     await withVoicesState((row) => {
