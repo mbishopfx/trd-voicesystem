@@ -1070,7 +1070,8 @@
           threads: [],
           messages: [],
           selectedPhone: "",
-          threadMessages: {}
+          threadMessages: {},
+          loadingPhone: ""
         },
         smsCampaignStatus: null,
         smsReplyScanInFlight: false,
@@ -1407,6 +1408,21 @@
         root.textContent = String(message || "");
       }
 
+      function renderSmsComposerState() {
+        const selected = selectedSmsThreadPhone();
+        const input = document.getElementById("smsReplyInput");
+        const button = document.getElementById("smsReplyBtn");
+        if (input instanceof HTMLTextAreaElement) {
+          input.disabled = !selected;
+          input.placeholder = selected ? `Reply to ${selected}...` : "Select a conversation to reply";
+        }
+        if (button instanceof HTMLButtonElement) {
+          button.disabled = !selected;
+          button.classList.toggle("opacity-50", !selected);
+          button.classList.toggle("cursor-not-allowed", !selected);
+        }
+      }
+
       function renderSmsThreads() {
         const root = document.getElementById("smsThreadList");
         if (!root) return;
@@ -1447,6 +1463,7 @@
 
         const selected = selectedSmsThreadPhone();
         const twilioNumber = String(state.smsInbox?.twilioNumber || "");
+        const loading = String(state.smsInbox?.loadingPhone || "") === selected;
         const threadRows = state.smsInbox?.threadMessages?.[selected] || [];
         const rows = threadRows
           .slice()
@@ -1460,14 +1477,22 @@
           header.textContent = "Select a conversation";
           meta.textContent = "--";
           body.innerHTML = `<p class="text-sm text-outline">Select a conversation to view message history.</p>`;
+          renderSmsComposerState();
           return;
         }
 
         header.textContent = selected;
         meta.textContent = twilioNumber ? `Your Twilio number: ${twilioNumber}` : "--";
 
+        if (loading && rows.length === 0) {
+          body.innerHTML = `<p class="text-sm text-outline">Loading conversation...</p>`;
+          renderSmsComposerState();
+          return;
+        }
+
         if (rows.length === 0) {
           body.innerHTML = `<p class="text-sm text-outline">No messages found for this contact in the current inbox window.</p>`;
+          renderSmsComposerState();
           return;
         }
 
@@ -1491,20 +1516,32 @@
           .join("");
 
         body.scrollTop = body.scrollHeight;
+        renderSmsComposerState();
       }
 
       async function loadSmsThread(phone, silent = false) {
         const selected = String(phone || "").trim();
         if (!selected) return;
+        state.smsInbox.loadingPhone = selected;
+        renderSmsConversation();
         try {
           const data = await getJson(`/api/sms/thread/${encodeURIComponent(selected)}?limit=300`);
-          state.smsInbox.threadMessages[selected] = Array.isArray(data.messages) ? data.messages : [];
+          state.smsInbox.threadMessages[selected] = Array.isArray(data.messages)
+            ? data.messages.map((row) => ({ ...row, counterparty: selected }))
+            : [];
           if (selectedSmsThreadPhone() === selected) {
             renderSmsConversation();
           }
         } catch (error) {
           if (!silent) {
             showToast(`Failed to load thread ${selected}: ${String(error)}`, true);
+          }
+        } finally {
+          if (state.smsInbox.loadingPhone === selected) {
+            state.smsInbox.loadingPhone = "";
+          }
+          if (selectedSmsThreadPhone() === selected) {
+            renderSmsConversation();
           }
         }
       }
@@ -1535,6 +1572,7 @@
           state.smsInbox.messages = [];
           state.smsInbox.selectedPhone = "";
           state.smsInbox.threadMessages = {};
+          state.smsInbox.loadingPhone = "";
           renderSmsThreads();
           renderSmsConversation();
           renderSmsInboxStatus(`Inbox unavailable: ${String(error)}`);
@@ -2884,7 +2922,7 @@
           showToast("SMS inbox refreshed.");
         });
 
-        document.getElementById("smsThreadList")?.addEventListener("click", (event) => {
+        document.getElementById("smsThreadList")?.addEventListener("click", async (event) => {
           const target = event.target;
           if (!(target instanceof HTMLElement)) return;
           const button = target.closest("[data-sms-phone]");
@@ -2895,10 +2933,25 @@
           state.smsInbox.selectedPhone = String(phone || "").trim();
           renderSmsThreads();
           renderSmsConversation();
-          loadSmsThread(phone, true).catch(() => {});
+          try {
+            await loadSmsThread(phone, true);
+          } catch {
+            // handled in loader
+          }
         });
 
         document.getElementById("smsReplyBtn")?.addEventListener("click", async () => {
+          try {
+            await sendSmsReplyFromInbox();
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("smsReplyInput")?.addEventListener("keydown", async (event) => {
+          if (!(event instanceof KeyboardEvent)) return;
+          if (event.key !== "Enter" || event.shiftKey) return;
+          event.preventDefault();
           try {
             await sendSmsReplyFromInbox();
           } catch (error) {

@@ -3945,6 +3945,7 @@ export function createServer() {
           to,
           fromNormalized,
           toNormalized,
+          counterparty: requestedPhone,
           dateCreated: row.dateCreated,
           dateSent: row.dateSent,
           dateUpdated: row.dateUpdated,
