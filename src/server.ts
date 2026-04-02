@@ -1512,22 +1512,73 @@ function clipText(value: string | undefined, limit: number, fallback = ""): stri
   return text.slice(0, limit).trim();
 }
 
+function sanitizeCampaignFreeform(value: string | undefined, limit: number, fallback = ""): string {
+  const source = safeString(value) || fallback;
+  if (!source) return "";
+
+  const cleaned = source
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+    .replace(/[*_#>`~]/g, " ")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .map((line) => line.replace(/^[-*•]+\s*/, ""))
+    .map((line) => line.replace(/^\d+[.)]\s*/, ""))
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned.slice(0, limit).trim();
+}
+
+function deriveCampaignOpeningScript(campaignScope: string, customPitch?: string): string {
+  const baseOpening =
+    "Hi {{leadFirstName}}, this is Jarvis with True Rank Digital. I reviewed {{leadCompany}}'s site and found a couple things worth showing you around AI search visibility and Google authority. Are you the right person to point that out to?";
+  const pitch = sanitizeCampaignFreeform(customPitch, 240);
+  if (!pitch) return baseOpening;
+
+  const firstSentence =
+    pitch
+      .split(/(?<=[.?!])\s+/)
+      .map((part) => part.trim())
+      .find(Boolean) || pitch;
+  const naturalHook = firstSentence
+    .replace(/^(system message|system prompt|pitch|script)\s*[:\-]\s*/i, "")
+    .replace(/^(say|mention|tell them|tell the lead|let them know|open with|start with)\s+/i, "")
+    .trim();
+
+  if (!naturalHook || /^(be|sound|keep|focus|avoid|do not|don't|use|stay|act|talk|speak)\b/i.test(naturalHook)) {
+    return baseOpening;
+  }
+
+  const leadIn = `Hi {{leadFirstName}}, this is Jarvis with True Rank Digital. I reviewed {{leadCompany}}'s site and found a few things worth showing you.`;
+  const hook = naturalHook.replace(/^jarvis\s+/i, "").replace(/\s+/g, " ").trim();
+  const normalizedHook = hook.endsWith("?") || hook.endsWith(".") || hook.endsWith("!") ? hook : `${hook}.`;
+  const scoped = campaignScope.toLowerCase().includes("site")
+    ? normalizedHook
+    : `${normalizedHook} We can walk you through it in a free consultation.`;
+  return clipText(`${leadIn} ${scoped}`, 320, baseOpening) || baseOpening;
+}
+
 function buildJarvisCampaignTemplate(
   baseTemplate: AgentTemplate,
-  input: { campaignName: string; campaignScope?: string; toneInstruction?: string }
+  input: { campaignName: string; campaignScope?: string; toneInstruction?: string; customPitch?: string }
 ): AgentTemplate {
   const campaignScope =
-    clipText(
+    sanitizeCampaignFreeform(
       input.campaignScope,
       280,
       "Reference that we reviewed their site, found meaningful visibility issues, and want to show them in a free consultation."
     ) || "Reference that we reviewed their site, found meaningful visibility issues, and want to show them in a free consultation.";
   const toneInstruction =
-    clipText(
+    sanitizeCampaignFreeform(
       input.toneInstruction,
       280,
       "Be direct, human, confident, and natural. Skip filler phrases. Sound like a real strategist, not a scripted bot."
     ) || "Be direct, human, confident, and natural. Skip filler phrases. Sound like a real strategist, not a scripted bot.";
+  const customPitch = sanitizeCampaignFreeform(input.customPitch, 560);
 
   return normalizeTemplateInput(
     {
@@ -1538,8 +1589,7 @@ function buildJarvisCampaignTemplate(
       objective: `${baseTemplate.objective} On this campaign, anchor the call around this scope: ${campaignScope}`.slice(0, 420),
       offerSummary:
         "We reviewed their site and found issues that impact AI visibility and Google authority. The goal is to book a free consultation to show them exactly what to fix.",
-      openingScript:
-        "Hi {{leadFirstName}}, this is Jarvis with True Rank Digital. I was looking at {{leadCompany}}'s site and found a couple things worth showing you. Are you the right person to point that out to?",
+      openingScript: deriveCampaignOpeningScript(campaignScope, customPitch),
       qualificationQuestions: [
         "Are you the right person to review growth and visibility opportunities for {{leadCompany}}?",
         "If we keep it practical, would a free consultation this week be useful to walk through what we found on the site?"
@@ -1548,6 +1598,7 @@ function buildJarvisCampaignTemplate(
         ...baseTemplate.knowledgeBase,
         `Campaign scope: ${campaignScope}`,
         `Tone direction: ${toneInstruction}`,
+        ...(customPitch ? [`Campaign pitch guidance: ${customPitch}`] : []),
         "Always make clear we actually reviewed their site before calling."
       ],
       allowedTopics: Array.from(
@@ -1563,7 +1614,12 @@ function buildJarvisCampaignTemplate(
         new Set([
           ...baseTemplate.compliance,
           "Do not drift away from the campaign scope supplied for this upload.",
-          "Keep tone aligned to the campaign tone instruction while staying professional."
+          "Keep tone aligned to the campaign tone instruction while staying professional.",
+          ...(customPitch
+            ? [
+                "Use the campaign pitch guidance as directional framing only. Keep the opener natural, concise, and consistent with True Rank Digital."
+              ]
+            : [])
         ])
       )
     },
@@ -2587,13 +2643,18 @@ export function createServer() {
       280,
       "Be direct, natural, and consultative. Skip filler phrases and sound like a real strategist."
     );
+    const customPitch = sanitizeCampaignFreeform(
+      safeString(body.customPitch) || safeString(body.systemPrompt),
+      560
+    );
     const trustImportLeads = asOptionalBool(body.trustImportLeads) ?? true;
 
     const baseTemplate = (await getActiveTemplate()) || createDefaultTemplate("Jarvis Campaign Base");
     const campaignTemplate = buildJarvisCampaignTemplate(baseTemplate, {
       campaignName,
       campaignScope,
-      toneInstruction
+      toneInstruction,
+      customPitch
     });
 
     let createdAssistant:
@@ -2658,6 +2719,7 @@ export function createServer() {
             `Jarvis campaign upload: ${campaignName}`,
             `Scope: ${campaignScope}`,
             `Tone: ${toneInstruction}`,
+            ...(customPitch ? [`Pitch: ${clipText(customPitch, 180)}`] : []),
             `Assistant: ${createdAssistant?.assistantId || ""}`
           ].filter(Boolean);
           const existing = state.leads[built.id];
@@ -2747,6 +2809,7 @@ export function createServer() {
       campaignName,
       campaignScope,
       toneInstruction,
+      customPitch,
       assistant: createdAssistant,
       result
     });
