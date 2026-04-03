@@ -22,6 +22,7 @@ interface CreditProbeRequest {
   method?: "GET" | "POST";
   body?: unknown;
   headers?: Record<string, string>;
+  authMode?: "private" | "public";
 }
 
 const BASE_CREDIT_PROBES: CreditProbeRequest[] = [
@@ -33,23 +34,7 @@ const BASE_CREDIT_PROBES: CreditProbeRequest[] = [
   { endpoint: "/organization" },
   { endpoint: "/organization/usage" },
   { endpoint: "/org" },
-  { endpoint: "/org/usage" },
-  {
-    endpoint: "/analytics",
-    method: "POST",
-    body: {
-      queries: [
-        {
-          table: "subscription",
-          name: "credit_guard",
-          operations: [
-            { operation: "max", column: "minutesUsed", alias: "maxMinutesUsed" },
-            { operation: "max", column: "cost", alias: "maxCost" }
-          ]
-        }
-      ]
-    }
-  }
+  { endpoint: "/org/usage" }
 ];
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -174,25 +159,38 @@ function buildCreditProbeRequests(orgId: string): CreditProbeRequest[] {
     ? [
         { endpoint: `/subscription/${encodeURIComponent(orgId)}` },
         { endpoint: `/org/${encodeURIComponent(orgId)}` },
-        { endpoint: `/org/${encodeURIComponent(orgId)}/subscription` },
+        { endpoint: `/org/${encodeURIComponent(orgId)}`, authMode: "public" },
         { endpoint: `/organization/${encodeURIComponent(orgId)}` },
-        { endpoint: `/organization/${encodeURIComponent(orgId)}/subscription` },
+        { endpoint: `/organization/${encodeURIComponent(orgId)}`, authMode: "public" },
         { endpoint: "/subscription", headers: scopedHeaders },
         { endpoint: "/organization", headers: scopedHeaders },
-        { endpoint: "/org", headers: scopedHeaders }
+        { endpoint: "/org", headers: scopedHeaders },
+        { endpoint: "/org", headers: scopedHeaders, authMode: "public" }
       ]
     : [];
 
-  return [...scoped, ...BASE_CREDIT_PROBES.map((probe) => ({ ...probe, headers: { ...(probe.headers || {}), ...(scopedHeaders || {}) } }))];
+  return [
+    ...scoped,
+    ...BASE_CREDIT_PROBES.map((probe) => ({
+      ...probe,
+      headers: { ...(probe.headers || {}), ...(scopedHeaders || {}) }
+    }))
+  ];
 }
 
-async function fetchJson(url: string, apiKey: string, probe?: CreditProbeRequest): Promise<{ status: number; payload?: unknown }> {
+async function fetchJson(
+  url: string,
+  privateKey: string,
+  publicKey: string,
+  probe?: CreditProbeRequest
+): Promise<{ status: number; payload?: unknown }> {
   const hasBody = probe?.body !== undefined;
   const method = probe?.method || (hasBody ? "POST" : "GET");
+  const authToken = probe?.authMode === "public" ? publicKey || privateKey : privateKey;
   const response = await fetch(url, {
     method,
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${authToken}`,
       Accept: "application/json",
       ...(hasBody ? { "content-type": "application/json" } : {}),
       ...(probe?.headers || {})
@@ -212,7 +210,7 @@ async function discoverOrgId(apiKey: string): Promise<string> {
   const discoveryProbes: CreditProbeRequest[] = [{ endpoint: "/assistant?limit=1" }, { endpoint: "/assistant" }];
   for (const probe of discoveryProbes) {
     try {
-      const response = await fetchJson(`${config.vapiBaseUrl}${probe.endpoint}`, apiKey, probe);
+      const response = await fetchJson(`${config.vapiBaseUrl}${probe.endpoint}`, apiKey, config.vapiPublicKey, probe);
       if (response.status < 200 || response.status >= 300) continue;
       const orgId = extractOrgId(response.payload);
       if (orgId) return orgId;
@@ -251,12 +249,16 @@ async function fetchCreditsNow(): Promise<VapiCreditGuardStatus> {
   const probes = buildCreditProbeRequests(orgId);
 
   let lastStatus = 0;
+  let sawUnsupported = false;
   for (const probe of probes) {
     const target = `${config.vapiBaseUrl}${probe.endpoint}`;
     try {
-      const response = await fetchJson(target, config.vapiApiKey, probe);
+      const response = await fetchJson(target, config.vapiApiKey, config.vapiPublicKey, probe);
       lastStatus = response.status;
-      if (response.status === 404) continue;
+      if (response.status === 404 || response.status === 401) {
+        sawUnsupported = true;
+        continue;
+      }
       if (response.status < 200 || response.status >= 300) continue;
 
       const availableCredits = extractRemainingCredits(response.payload);
@@ -282,7 +284,11 @@ async function fetchCreditsNow(): Promise<VapiCreditGuardStatus> {
     minCredits,
     fetchOk: false,
     stopDialing: false,
-    reason: lastStatus ? `credit endpoint unavailable (status=${lastStatus})` : "credit endpoint unavailable",
+    reason: sawUnsupported
+      ? "credit endpoint unsupported for current Vapi key/account"
+      : lastStatus
+      ? `credit endpoint unavailable (status=${lastStatus})`
+      : "credit endpoint unavailable",
     checkedAt,
     statusCode: lastStatus || undefined
   };

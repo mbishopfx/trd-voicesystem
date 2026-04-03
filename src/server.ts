@@ -5533,6 +5533,23 @@ export function createServer() {
     if (calendlyUrlOverride) manualVariableOverrides.calendlyUrl = calendlyUrlOverride;
     if (googleCalendarUrlOverride) manualVariableOverrides.googleCalendarUrl = googleCalendarUrlOverride;
 
+    lead.notes = [
+      lead.notes,
+      `Manual test call for ${toNumber}`,
+      `Template=${selectedTemplate?.name || "unknown"}`
+    ]
+      .filter(Boolean)
+      .join(" | ")
+      .slice(0, 1200);
+    lead.sourceFile = "manual-test";
+    lead.status = "dialing";
+    lead.attempts = Math.max(1, lead.attempts || 0);
+    lead.lastAttemptAt = nowIso();
+    lead.callAttemptedAt = nowIso();
+    lead.updatedAt = nowIso();
+
+    await upsertManualLead(lead);
+
     try {
       const result = await createOutboundCall(lead, {
         apiKey: safeString(body.vapiApiKey),
@@ -5561,6 +5578,7 @@ export function createServer() {
         templateQualityScore: compiledTemplate?.quality.score,
         customVariablesApplied: Object.keys(customVariables).length
       });
+      await markManualLeadCallCreated(lead.id, result.id);
       runtimeInfo("agent", "manual test call queued", {
         leadId: lead.id,
         callId: result.id,
@@ -5569,6 +5587,14 @@ export function createServer() {
         customVariables: Object.keys(customVariables).length
       });
     } catch (error) {
+      await patchLead(lead.id, {
+        status: "failed",
+        attempts: Math.max(1, lead.attempts || 1),
+        lastError: String(error).slice(0, 600),
+        callAttemptedAt: nowIso(),
+        callEndedAt: nowIso(),
+        outcome: "call_create_failed"
+      });
       runtimeError("agent", "manual test call failed", error, {
         toNumber,
         templateId: selectedTemplate?.id || ""
