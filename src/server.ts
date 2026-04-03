@@ -4676,7 +4676,44 @@ export function createServer() {
   app.get("/api/calls/:leadId", async (req: Request, res: Response) => {
     const lead = await findLeadByIdOrCallId(req.params.leadId);
     if (!lead) {
-      res.status(404).json({ ok: false, error: "Lead not found" });
+      const direct = await fetchVapiArtifactsByCallId(req.params.leadId);
+      if (!direct.ok || !direct.artifacts) {
+        res.status(404).json({ ok: false, error: "Lead not found" });
+        return;
+      }
+
+      res.json({
+        ok: true,
+        call: {
+          id: req.params.leadId,
+          phone: undefined,
+          firstName: undefined,
+          lastName: undefined,
+          company: undefined,
+          email: undefined,
+          status: direct.artifacts.status || "unknown",
+          lastError: undefined,
+          attempts: undefined,
+          callId: req.params.leadId,
+          callAttemptedAt: direct.artifacts.startedAt,
+          callEndedAt: direct.artifacts.endedAt,
+          outcome: undefined,
+          transcript: direct.artifacts.transcript,
+          transcriptSummary: direct.artifacts.transcript?.slice(0, 300),
+          recordingUrl: direct.artifacts.audio.any[0],
+          bookingSource: undefined,
+          winSmsSentAt: undefined,
+          winSmsError: undefined,
+          voicemailSmsSentAt: undefined,
+          voicemailSmsError: undefined,
+          smsLastSid: undefined,
+          smsLastSentAt: undefined,
+          smsLastType: undefined,
+          smsLastError: undefined,
+          updatedAt: direct.artifacts.endedAt || direct.artifacts.startedAt || nowIso(),
+          fetchedFromVapi: true
+        }
+      });
       return;
     }
 
