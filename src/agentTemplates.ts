@@ -284,7 +284,30 @@ export function createDefaultTemplate(name = "Default Warm Outreach"): AgentTemp
 }
 
 export function normalizeTemplateInput(input: Record<string, unknown>, previous?: AgentTemplate): AgentTemplate {
-  const base = previous || createDefaultTemplate();
+  const fallback = createDefaultTemplate();
+  const base: AgentTemplate = previous
+    ? {
+        ...fallback,
+        ...previous,
+        qualificationQuestions: toList(previous.qualificationQuestions),
+        valuePoints: toList(previous.valuePoints),
+        knowledgeBase: toList(previous.knowledgeBase),
+        allowedTopics: toList(previous.allowedTopics),
+        forbiddenTopics: toList(previous.forbiddenTopics),
+        rebuttals: toRebuttals(previous.rebuttals),
+        compliance: toList(previous.compliance),
+        rulePacks: toList(previous.rulePacks),
+        rules: {
+          ...fallback.rules,
+          ...(previous.rules || {})
+        },
+        tools: {
+          ...fallback.tools,
+          ...(previous.tools || {}),
+          customTools: toList(previous.tools?.customTools)
+        }
+      }
+    : fallback;
   const now = nowIso();
 
   const next: AgentTemplate = {
