@@ -119,7 +119,15 @@ import {
   spinUpAssistantForProfile,
   upsertVoiceProfile
 } from "./voices.js";
-import { getSmsCampaignDashboard, getSmsOptOutStatus, runSmsCsvCampaign, runSmsReplyFollowUpScan } from "./smsCampaigns.js";
+import {
+  deleteSmsThread,
+  getDeletedSmsThreadPhones,
+  getSmsCampaignDashboard,
+  getSmsOptOutStatus,
+  isSmsThreadDeleted,
+  runSmsCsvCampaign,
+  runSmsReplyFollowUpScan
+} from "./smsCampaigns.js";
 
 type RawBodyRequest = Request & { rawBody?: string };
 let reconcileLoopStarted = false;
@@ -3932,6 +3940,7 @@ export function createServer() {
     const twilioNumber = normalizePhone(config.twilioPhoneNumber || "") || "";
 
     const messages = await listTwilioMessages({ pageSize });
+    const deletedThreads = await getDeletedSmsThreadPhones();
     const normalized = messages
       .map((row) => {
         const from = safeString(row.from) || "";
@@ -3962,6 +3971,7 @@ export function createServer() {
         };
       })
       .filter((row) => Boolean(row.counterparty))
+      .filter((row) => !deletedThreads.has(normalizePhone(String(row.counterparty || "")) || String(row.counterparty || "").trim()))
       .sort((a, b) => b.timestampMs - a.timestampMs)
       .slice(0, limit);
 
@@ -4020,6 +4030,10 @@ export function createServer() {
     const requestedPhone = normalizePhone(req.params.phone || "");
     if (!requestedPhone) {
       res.status(400).json({ ok: false, error: "Valid phone is required" });
+      return;
+    }
+    if (await isSmsThreadDeleted(requestedPhone)) {
+      res.status(404).json({ ok: false, error: "SMS conversation not found" });
       return;
     }
     const limit = asOptionalInt(req.query.limit, 10, 400) || 200;
@@ -4116,6 +4130,17 @@ export function createServer() {
       sid: sent.sid,
       status: sent.status
     });
+  });
+
+  app.post("/api/sms/thread/:phone/delete", async (req: Request, res: Response) => {
+    const requestedPhone = normalizePhone(req.params.phone || "");
+    if (!requestedPhone) {
+      res.status(400).json({ ok: false, error: "Valid phone is required" });
+      return;
+    }
+
+    const deleted = await deleteSmsThread(requestedPhone);
+    res.json({ ok: true, deleted });
   });
 
   app.get("/api/sms/campaign/status", async (_req: Request, res: Response) => {

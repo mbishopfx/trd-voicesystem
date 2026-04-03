@@ -1011,7 +1011,10 @@
               <div class="rounded-xl border border-outline-variant/20 bg-surface p-5">
                 <p class="text-sm text-outline">Click any conversation on the left to open a dedicated chat window with message history and reply controls.</p>
                 <div class="mt-4">
-                  <button id="smsOpenSelectedThreadBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Open Selected Chat</button>
+                  <div class="flex flex-wrap gap-2">
+                    <button id="smsOpenSelectedThreadBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Open Selected Chat</button>
+                    <button id="smsDeleteSelectedThreadBtn" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-700">Delete Chat</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1027,7 +1030,10 @@
                     <p id="smsConversationHeader" class="text-sm font-semibold text-on-surface">Select a conversation</p>
                     <p id="smsConversationMeta" class="mt-1 text-xs text-outline">--</p>
                   </div>
-                  <button id="smsChatCloseBtn" class="rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Close</button>
+                  <div class="flex gap-2">
+                    <button id="smsDeleteThreadBtn" class="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold uppercase tracking-wider text-amber-700">Delete Chat</button>
+                    <button id="smsChatCloseBtn" class="rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Close</button>
+                  </div>
                 </div>
                 <div id="smsConversationBody" class="no-scrollbar flex-1 space-y-2 overflow-auto bg-surface px-4 py-4">
                   <p class="text-sm text-outline">Select a conversation to view message history.</p>
@@ -1482,6 +1488,10 @@
         const selected = selectedSmsThreadPhone();
         const input = document.getElementById("smsReplyInput");
         const button = document.getElementById("smsReplyBtn");
+        const deleteButtons = [
+          document.getElementById("smsDeleteThreadBtn"),
+          document.getElementById("smsDeleteSelectedThreadBtn")
+        ];
         if (input instanceof HTMLTextAreaElement) {
           input.disabled = !selected;
           input.placeholder = selected ? `Reply to ${selected}...` : "Select a conversation to reply";
@@ -1490,6 +1500,12 @@
           button.disabled = !selected;
           button.classList.toggle("opacity-50", !selected);
           button.classList.toggle("cursor-not-allowed", !selected);
+        }
+        for (const control of deleteButtons) {
+          if (!(control instanceof HTMLButtonElement)) continue;
+          control.disabled = !selected;
+          control.classList.toggle("opacity-50", !selected);
+          control.classList.toggle("cursor-not-allowed", !selected);
         }
       }
 
@@ -1687,6 +1703,26 @@
         await refreshSmsInbox(true);
         await loadSmsThread(to, true);
         showToast(`Reply sent to ${to}. sid=${sent.sid || "--"}`);
+      }
+
+      async function deleteSmsThreadFromInbox() {
+        const phone = selectedSmsThreadPhone();
+        if (!phone) {
+          throw new Error("Select an SMS conversation first.");
+        }
+        const confirmed = window.confirm(`Delete chat for ${phone}? This hides it from the inbox view.`);
+        if (!confirmed) return;
+
+        await postJson(`/api/sms/thread/${encodeURIComponent(phone)}/delete`);
+        if (state.smsInbox.selectedPhone === phone) {
+          state.smsInbox.selectedPhone = "";
+        }
+        if (state.smsInbox.threadMessages && state.smsInbox.threadMessages[phone]) {
+          delete state.smsInbox.threadMessages[phone];
+        }
+        setSmsChatWindow(false);
+        await refreshSmsInbox(true);
+        showToast(`Deleted chat for ${phone}.`);
       }
 
       function renderSmsCampaignRuns(runs) {
@@ -3075,6 +3111,22 @@
             await loadSmsThread(phone, true);
           } catch {
             // handled in loader
+          }
+        });
+
+        document.getElementById("smsDeleteSelectedThreadBtn")?.addEventListener("click", async () => {
+          try {
+            await deleteSmsThreadFromInbox();
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("smsDeleteThreadBtn")?.addEventListener("click", async () => {
+          try {
+            await deleteSmsThreadFromInbox();
+          } catch (error) {
+            showToast(String(error), true);
           }
         });
 

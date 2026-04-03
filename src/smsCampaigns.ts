@@ -60,6 +60,7 @@ interface SmsCampaignState {
       optOutReason?: string;
     }
   >;
+  deletedThreads: Record<string, { deletedAt: string }>;
   updatedAt: string;
 }
 
@@ -96,6 +97,7 @@ function createEmptyState(): SmsCampaignState {
   return {
     runs: [],
     replyMarkers: {},
+    deletedThreads: {},
     updatedAt: nowIso()
   };
 }
@@ -112,6 +114,7 @@ function getMemoryState(): SmsCampaignState {
 function normalizeState(state: SmsCampaignState): SmsCampaignState {
   state.runs = Array.isArray(state.runs) ? state.runs.slice(-MAX_RUN_LOGS) : [];
   state.replyMarkers = state.replyMarkers && typeof state.replyMarkers === "object" ? state.replyMarkers : {};
+  state.deletedThreads = state.deletedThreads && typeof state.deletedThreads === "object" ? state.deletedThreads : {};
   state.updatedAt = state.updatedAt || nowIso();
   return state;
 }
@@ -351,6 +354,35 @@ export async function getSmsOptOutStatus(phone: string): Promise<{ optedOut: boo
     reason: marker?.optOutReason,
     at: marker?.optedOutAt
   };
+}
+
+export async function isSmsThreadDeleted(phone: string): Promise<boolean> {
+  const normalizedPhone = normalizeSmsPhone(phone);
+  if (!normalizedPhone) return false;
+  const state = await loadSmsCampaignState();
+  return Boolean(state.deletedThreads?.[normalizedPhone]?.deletedAt);
+}
+
+export async function getDeletedSmsThreadPhones(): Promise<Set<string>> {
+  const state = await loadSmsCampaignState();
+  return new Set(
+    Object.keys(state.deletedThreads || {})
+      .map((phone) => normalizeSmsPhone(phone))
+      .filter(Boolean)
+  );
+}
+
+export async function deleteSmsThread(phone: string): Promise<{ phone: string; deletedAt: string }> {
+  const normalizedPhone = normalizeSmsPhone(phone);
+  if (!normalizedPhone) {
+    throw new Error("Valid phone is required");
+  }
+  const deletedAt = nowIso();
+  await withSmsCampaignState((state) => {
+    state.deletedThreads = state.deletedThreads && typeof state.deletedThreads === "object" ? state.deletedThreads : {};
+    state.deletedThreads[normalizedPhone] = { deletedAt };
+  });
+  return { phone: normalizedPhone, deletedAt };
 }
 
 async function markPhoneOptedOut(phone: string, reason: string): Promise<void> {
