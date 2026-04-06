@@ -498,7 +498,8 @@
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <span id="schedulerEnabledBadge" class="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700">Disabled</span>
-                <button id="schedulerToggleBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Enable</button>
+                <button id="schedulerEnableBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">On</button>
+                <button id="schedulerDisableBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Off</button>
                 <button id="schedulerRunNowBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Run Now</button>
                 <button id="schedulerRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh</button>
               </div>
@@ -1345,8 +1346,9 @@
         const running = document.getElementById("schedulerRunningState");
         const lastTick = document.getElementById("schedulerLastTick");
         const nextRuns = document.getElementById("schedulerNextRuns");
-        const toggleBtn = document.getElementById("schedulerToggleBtn");
-        if (!badge || !running || !lastTick || !nextRuns || !toggleBtn) return;
+        const enableBtn = document.getElementById("schedulerEnableBtn");
+        const disableBtn = document.getElementById("schedulerDisableBtn");
+        if (!badge || !running || !lastTick || !nextRuns || !enableBtn || !disableBtn) return;
 
         const settings = status?.settings || {};
         const enabled = Boolean(settings.enabled);
@@ -1355,7 +1357,14 @@
         badge.className = enabled
           ? "rounded border border-teal-300 bg-teal-50 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-teal-700"
           : "rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-bold uppercase tracking-widest text-amber-700";
-        toggleBtn.textContent = enabled ? "Disable" : "Enable";
+        enableBtn.disabled = enabled;
+        disableBtn.disabled = !enabled;
+        enableBtn.className = enabled
+          ? "rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700 opacity-70"
+          : "rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface";
+        disableBtn.className = enabled
+          ? "rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface"
+          : "rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-700 opacity-70";
         running.textContent = isRunning ? "Run in progress" : "Idle";
         lastTick.textContent = status?.lastTickAt ? new Date(status.lastTickAt).toLocaleString() : "--";
         nextRuns.textContent = Array.isArray(status?.upcomingRunTimes) && status.upcomingRunTimes.length
@@ -3130,12 +3139,21 @@
           }
         });
 
-        document.getElementById("schedulerToggleBtn").addEventListener("click", async () => {
+        document.getElementById("schedulerEnableBtn").addEventListener("click", async () => {
           try {
-            const enabled = Boolean(state.schedulerStatus?.settings?.enabled);
-            await postJson("/api/bulk-scheduler/toggle", { enabled: !enabled });
+            await postJson("/api/bulk-scheduler/toggle", { enabled: true });
             await refreshScheduler();
-            showToast(!enabled ? "Scheduler enabled." : "Scheduler disabled.");
+            showToast("Scheduler enabled.");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("schedulerDisableBtn").addEventListener("click", async () => {
+          try {
+            await postJson("/api/bulk-scheduler/toggle", { enabled: false });
+            await refreshScheduler();
+            showToast("Scheduler disabled.");
           } catch (error) {
             showToast(String(error), true);
           }
