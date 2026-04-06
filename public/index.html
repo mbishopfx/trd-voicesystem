@@ -113,6 +113,10 @@
             <span class="material-symbols-outlined">insights</span>
             Analytics
           </a>
+          <a data-nav-tab="sms-campaigns" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-sms-campaigns">
+            <span class="material-symbols-outlined">sms</span>
+            SMS Campaigns
+          </a>
           <a data-nav-tab="sms-inbox" class="nav-tab flex items-center gap-3 px-4 py-3 text-sm tracking-tight text-slate-500" href="#tab-sms-inbox">
             <span class="material-symbols-outlined">sms</span>
             SMS Inbox
@@ -142,6 +146,7 @@
           <a data-top-tab="prospector" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-prospector">Prospector</a>
           <a data-top-tab="voices" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-voices">Voices</a>
           <a data-top-tab="live-monitor" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-live-monitor">Real-time Alerts</a>
+          <a data-top-tab="sms-campaigns" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-sms-campaigns">SMS Campaigns</a>
           <a data-top-tab="sms-inbox" class="top-tab flex h-16 items-center text-sm font-semibold text-slate-600" href="#tab-sms-inbox">SMS Inbox</a>
         </nav>
       </div>
@@ -1107,11 +1112,14 @@
             </div>
           </div>
 
-          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+        </section>
+
+        <section id="page-sms-campaigns" data-page="sms-campaigns" class="hidden space-y-6">
+          <section class="rounded-2xl bg-surface-container-low p-6 shadow-sm">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <h3 class="font-headline text-lg font-extrabold text-on-surface">SMS-Only CSV Campaign</h3>
-                <p class="text-sm text-outline">Upload CSV, map variables automatically, and launch direct SMS outreach.</p>
+                <h3 class="font-headline text-xl font-extrabold text-on-surface">SMS Campaigns</h3>
+                <p class="text-sm text-outline">Upload CSVs, map variables automatically, and launch direct SMS outreach only when you press Run.</p>
               </div>
             </div>
             <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -1185,7 +1193,7 @@
     </main>
 
     <script>
-      const TABS = ["dashboard", "campaigns", "scheduler", "prospector", "voices", "live-monitor", "analytics", "sms-inbox", "settings"];
+      const TABS = ["dashboard", "campaigns", "scheduler", "prospector", "voices", "live-monitor", "analytics", "sms-campaigns", "sms-inbox", "settings"];
       const state = {
         activeTab: "dashboard",
         files: [],
@@ -2241,7 +2249,7 @@
         if (tab === "analytics") {
           refreshAnalytics().catch(() => {});
         }
-        if (tab === "sms-inbox") {
+        if (tab === "sms-inbox" || tab === "sms-campaigns") {
           Promise.all([refreshSmsInbox(true), refreshSmsCampaignStatus()]).catch(() => {});
         }
       }
