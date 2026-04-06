@@ -331,7 +331,10 @@ function detectOptOutIntent(message: string): string | undefined {
     "do not text",
     "dont text",
     "do not contact",
-    "dont contact"
+    "dont contact",
+    "remove me",
+    "take me off",
+    "wrong number"
   ]);
   if (directMatches.has(normalized)) return normalized;
 
@@ -342,6 +345,126 @@ function detectOptOutIntent(message: string): string | undefined {
     return normalized;
   }
   return undefined;
+}
+
+type InboundReplyIntent = "identity" | "owner_confirm" | "negative" | "generic";
+
+function normalizeReplyText(message: string): string {
+  return String(message || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w\s?']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function detectInboundReplyIntent(message: string): InboundReplyIntent {
+  const normalized = normalizeReplyText(message);
+  if (!normalized) return "generic";
+
+  if (
+    /\b(who is this|who's this|who dis|what company is this|what is this regarding|what is this about|remind me who this is)\b/.test(
+      normalized
+    )
+  ) {
+    return "identity";
+  }
+
+  if (
+    /\b(not interested|no thanks|no thank you|not now|stop texting|leave me alone|wrong number|take me off|nope)\b/.test(normalized)
+  ) {
+    return "negative";
+  }
+
+  if (
+    /^(yes|yep|yeah|ya|sure|ok|okay|speaking|this is (him|her|he|she)|i am|i'm the owner|owner|thats me|that's me)\b/.test(
+      normalized
+    )
+  ) {
+    return "owner_confirm";
+  }
+
+  return "generic";
+}
+
+function hasConversationIntroduction(message: string, myName: string): boolean {
+  const normalized = normalizeReplyText(message);
+  if (!normalized) return false;
+  const normalizedName = normalizeReplyText(myName || "");
+  return Boolean(
+    normalized.includes("true rank digital") ||
+      normalized.includes("truerankdigital") ||
+      (normalizedName && normalized.includes(normalizedName))
+  );
+}
+
+function stripRepeatedIntroduction(message: string, myName: string): string {
+  const raw = String(message || "").trim();
+  if (!raw) return "";
+
+  const namePattern = String(myName || "")
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const introPatterns = [
+    new RegExp(`^(?:hi\\s+[^,]+,\\s*)?(?:this is\\s+)?${namePattern}\\s+(?:with|from)\\s+true\\s*rank\\s*digital(?:\\.com)?[.!,:\\-\\s]*`, "i"),
+    /^(?:hi\s+[^,]+,\s*)?(?:this is\s+)?true\s*rank\s*digital(?:\.com)?[.!,:-\s]*/i
+  ];
+
+  let next = raw;
+  for (const pattern of introPatterns) {
+    next = next.replace(pattern, "");
+  }
+
+  return next.trim() || raw;
+}
+
+function buildContextAwareReply(options: {
+  template: string;
+  rendered: string;
+  myName: string;
+  latestInboundBody: string;
+  company: string;
+  city: string;
+  priorOutboundBody?: string;
+}): { body?: string; skipReason?: string } {
+  const { template, rendered, myName, latestInboundBody, company, city, priorOutboundBody } = options;
+  const intent = detectInboundReplyIntent(latestInboundBody);
+
+  if (intent === "negative") {
+    return { skipReason: "Negative reply; no auto follow-up sent." };
+  }
+
+  const alreadyIntroduced =
+    hasConversationIntroduction(priorOutboundBody || "", myName) || hasConversationIntroduction(rendered, myName);
+  const business = company || "your business";
+  const market = city || "your area";
+
+  if (intent === "identity") {
+    return {
+      body: `${myName} with True Rank Digital. I was looking at ${business} and noticed you're barely showing up in Google's AI overviews around ${market}, while competitors are taking that traffic. Usually that points to an authority or entity setup issue. Are you handling SEO in-house or do you have an agency on it?`
+    };
+  }
+
+  if (intent === "owner_confirm") {
+    return {
+      body: `Perfect. I was looking at ${business} and noticed you're barely showing up in Google's AI overviews around ${market}, while competitors are taking that traffic. Usually that points to an authority or entity setup issue. Are you handling SEO in-house right now or do you have an agency on it?`
+    };
+  }
+
+  if (!rendered) {
+    return { skipReason: "Reply follow-up rendered empty." };
+  }
+
+  const body = alreadyIntroduced ? stripRepeatedIntroduction(rendered, myName) : rendered;
+  if (!body) {
+    return { skipReason: "Reply follow-up empty after cleanup." };
+  }
+
+  if (body === rendered && normalizeReplyText(template) === normalizeReplyText(rendered) && alreadyIntroduced) {
+    return { body: stripRepeatedIntroduction(rendered, myName) };
+  }
+
+  return { body };
 }
 
 export async function getSmsOptOutStatus(phone: string): Promise<{ optedOut: boolean; reason?: string; at?: string }> {
@@ -771,6 +894,7 @@ export async function runSmsReplyFollowUpScan(input?: {
       }
 
       const lead = leadMap.get(phone);
+      const latestPriorOutbound = sortedDesc.find((row) => !row.inbound && row.timestampMs <= latestInbound.timestampMs);
       const vars = new Map<string, string>();
       const setVar = (key: string, value: string): void => {
         const normalizedKey = normalizeVariableKey(key);
@@ -785,14 +909,25 @@ export async function runSmsReplyFollowUpScan(input?: {
       setVar("phone", phone);
 
       const rendered = renderTemplate(template, vars);
-      if (!rendered) {
-        run.errors.push(`Skipped ${phone}: reply follow-up rendered empty`);
+      const followUp = buildContextAwareReply({
+        template,
+        rendered,
+        myName,
+        latestInboundBody: latestInbound.body || "",
+        company: lead?.company || "your business",
+        city: lead?.prospectCity || "your area",
+        priorOutboundBody: latestPriorOutbound?.body || ""
+      });
+      if (!followUp.body) {
+        if (followUp.skipReason) {
+          run.errors.push(`Skipped ${phone}: ${followUp.skipReason}`);
+        }
         run.skippedCount += 1;
         continue;
       }
 
       try {
-        const sent = await sendSmsMessage({ to: phone, body: rendered });
+        const sent = await sendSmsMessage({ to: phone, body: followUp.body });
         markerUpdates[phone] = {
           ...(markerUpdates[phone] || lastMarker || {}),
           lastInboundSid: latestInbound.sid || lastMarker?.lastInboundSid,

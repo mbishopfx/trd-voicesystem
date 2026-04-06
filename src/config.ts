@@ -211,7 +211,7 @@ export const config = {
     "hey [first_name], was just looking at [company_name]'s site and noticed something a little weird... u the owner?",
   smsCampaignReplyTemplate:
     process.env.SMS_CAMPAIGN_REPLY_TEMPLATE?.trim() ||
-    "[my_name] with truerankdigital.com. honestly nothing is actually broken, i just noticed you guys are basically invisible on google's new ai overviews for [city] and your competitors are eating up all the traffic. usually means your entity setup is off. u guys handling your seo in-house right now or do u have an agency?",
+    "honestly nothing is actually broken, i just noticed [company_name] is basically invisible in google's new ai overviews around [city] while competitors are taking that traffic. usually that points to an authority or entity setup issue. are you handling seo in-house right now or do you have an agency on it?",
   smsCampaignDefaultMyName: process.env.SMS_CAMPAIGN_DEFAULT_MY_NAME?.trim() || "Jarvis",
   ghlSyncOnCallAttempt: asBool("GHL_SYNC_ON_CALL_ATTEMPT", false),
   prospectorGhlAutoSync: asBool("PROSPECTOR_GHL_AUTO_SYNC", true),
