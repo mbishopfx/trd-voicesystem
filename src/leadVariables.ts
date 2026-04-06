@@ -18,6 +18,28 @@ export function normalizeVariableKey(value: string): string {
     .replace(/[^a-z0-9]/g, "");
 }
 
+const CANONICAL_CAMPAIGN_VARIABLE_KEYS: Record<string, string> = {
+  firstname: "leadFirstName",
+  first: "leadFirstName",
+  leadfirstname: "leadFirstName",
+  lastname: "leadLastName",
+  leadlastname: "leadLastName",
+  company: "leadCompany",
+  companyname: "leadCompany",
+  business: "leadCompany",
+  businessname: "leadCompany",
+  leadcompany: "leadCompany",
+  findings: "leadFindings",
+  leadfindings: "leadFindings",
+  bookingurl: "bookingUrl",
+  bookinglink: "bookingUrl",
+  calendlyurl: "calendlyUrl",
+  calendlylink: "calendlyUrl",
+  googlecalendarurl: "googleCalendarUrl",
+  campaign: "campaignName",
+  campaignname: "campaignName"
+};
+
 function toText(value: unknown): string {
   if (value === undefined || value === null) return "";
   if (typeof value === "string") return value.trim();
@@ -76,6 +98,57 @@ function put(out: Record<string, string>, key: string, value: unknown): void {
   const normalizedValue = toText(value);
   if (!normalizedKey || !normalizedValue) return;
   out[normalizedKey] = normalizedValue;
+}
+
+export function resolveCampaignVariableKey(token: string): string {
+  const normalized = normalizeVariableKey(token);
+  if (!normalized) return "";
+  return CANONICAL_CAMPAIGN_VARIABLE_KEYS[normalized] || normalized;
+}
+
+export function normalizeCampaignMessageTemplate(
+  template: string,
+  options?: { limit?: number; literalReplacements?: Record<string, string> }
+): string {
+  const source = String(template || "").trim();
+  if (!source) return "";
+
+  const literalReplacements = Object.fromEntries(
+    Object.entries(options?.literalReplacements || {})
+      .map(([key, value]) => [normalizeVariableKey(key), toText(value)])
+      .filter((entry): entry is [string, string] => Boolean(entry[0]) && Boolean(entry[1]))
+  );
+
+  const cleaned = source
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+    .replace(/[*_#>`~]/g, " ")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .map((line) => line.replace(/^[-*•]+\s*/, ""))
+    .map((line) => line.replace(/^\d+[.)]\s*/, ""))
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .replace(/^(system message|system prompt|pitch|script|message|opener|opening line|custom message)\s*[:\-]\s*/i, "")
+    .trim();
+
+  const replaceToken = (rawToken: string): string => {
+    const normalized = normalizeVariableKey(rawToken);
+    if (!normalized) return "";
+    if (literalReplacements[normalized]) return literalReplacements[normalized];
+    const resolved = resolveCampaignVariableKey(rawToken);
+    return resolved ? `{{${resolved}}}` : "";
+  };
+
+  const withBraces = cleaned.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, token) => replaceToken(String(token || "")));
+  const normalized = withBraces.replace(/\[\s*([a-zA-Z0-9_ -]+?)\s*\]/g, (_match, token) =>
+    replaceToken(String(token || ""))
+  );
+
+  const limit = Math.max(40, Math.trunc(Number(options?.limit || 320)));
+  return normalized.replace(/\s+/g, " ").trim().slice(0, limit).trim();
 }
 
 export function extractLeadVariables(

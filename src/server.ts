@@ -5,7 +5,7 @@ import path from "node:path";
 import { config, effectiveCps, resolvedBookingUrl } from "./config.js";
 import { buildLeadFromCsvRow, ingestOnce, parseCsvRows } from "./ingest.js";
 import { inferOutcome, hasPromptInjectionSignals } from "./outcomes.js";
-import { extractLeadVariables } from "./leadVariables.js";
+import { extractLeadVariables, normalizeCampaignMessageTemplate } from "./leadVariables.js";
 import { normalizePhone } from "./phone.js";
 import { withState } from "./store.js";
 import type { Lead } from "./types.js";
@@ -1544,9 +1544,21 @@ function sanitizeCampaignFreeform(value: string | undefined, limit: number, fall
   return cleaned.slice(0, limit).trim();
 }
 
-function deriveCampaignOpeningScript(campaignScope: string, customPitch?: string): string {
+function deriveCampaignOpeningScript(campaignScope: string, customPitch?: string, customMessageTemplate?: string): string {
   const baseOpening =
     "Hi {{leadFirstName}}, this is Jarvis with True Rank Digital. I reviewed {{leadCompany}}'s site and found a couple things worth showing you around AI search visibility and Google authority. Are you the right person to point that out to?";
+  const normalizedMessage = normalizeCampaignMessageTemplate(customMessageTemplate || "", {
+    limit: 360,
+    literalReplacements: {
+      my_name: "Jarvis",
+      myname: "Jarvis",
+      brand_name: "True Rank Digital",
+      brandname: "True Rank Digital"
+    }
+  });
+  if (normalizedMessage) {
+    return normalizedMessage;
+  }
   const pitch = sanitizeCampaignFreeform(customPitch, 240);
   if (!pitch) return baseOpening;
 
@@ -1575,7 +1587,7 @@ function deriveCampaignOpeningScript(campaignScope: string, customPitch?: string
 
 function buildJarvisCampaignTemplate(
   baseTemplate: AgentTemplate,
-  input: { campaignName: string; campaignScope?: string; toneInstruction?: string; customPitch?: string }
+  input: { campaignName: string; campaignScope?: string; toneInstruction?: string; customPitch?: string; customMessageTemplate?: string }
 ): AgentTemplate {
   const campaignScope =
     sanitizeCampaignFreeform(
@@ -1590,6 +1602,15 @@ function buildJarvisCampaignTemplate(
       "Be direct, human, confident, and natural. Skip filler phrases. Sound like a real strategist, not a scripted bot."
     ) || "Be direct, human, confident, and natural. Skip filler phrases. Sound like a real strategist, not a scripted bot.";
   const customPitch = sanitizeCampaignFreeform(input.customPitch, 560);
+  const customMessageTemplate = normalizeCampaignMessageTemplate(input.customMessageTemplate || "", {
+    limit: 360,
+    literalReplacements: {
+      my_name: "Jarvis",
+      myname: "Jarvis",
+      brand_name: "True Rank Digital",
+      brandname: "True Rank Digital"
+    }
+  });
 
   return normalizeTemplateInput(
     {
@@ -1600,7 +1621,7 @@ function buildJarvisCampaignTemplate(
       objective: `${baseTemplate.objective} On this campaign, anchor the call around this scope: ${campaignScope}`.slice(0, 420),
       offerSummary:
         "We reviewed their site and found issues that impact AI visibility and Google authority. The goal is to book a free consultation to show them exactly what to fix.",
-      openingScript: deriveCampaignOpeningScript(campaignScope, customPitch),
+      openingScript: deriveCampaignOpeningScript(campaignScope, customPitch, customMessageTemplate),
       qualificationQuestions: [
         "Are you the right person to review growth and visibility opportunities for {{leadCompany}}?",
         "If we keep it practical, would a free consultation this week be useful to walk through what we found on the site?"
@@ -1609,6 +1630,7 @@ function buildJarvisCampaignTemplate(
         ...baseTemplate.knowledgeBase,
         `Campaign scope: ${campaignScope}`,
         `Tone direction: ${toneInstruction}`,
+        ...(customMessageTemplate ? [`Campaign opening message template: ${customMessageTemplate}`] : []),
         ...(customPitch ? [`Campaign pitch guidance: ${customPitch}`] : []),
         "Always make clear we actually reviewed their site before calling."
       ],
@@ -2557,6 +2579,7 @@ export function createServer() {
         campaignScope: safeString(body.campaignScope),
         toneInstruction: safeString(body.toneInstruction),
         customPitch: safeString(body.customPitch) || safeString(body.systemPrompt),
+        customMessageTemplate: safeString(body.customMessageTemplate) || safeString(body.customMessage),
         assistantId: safeString(body.assistantId),
         spinUpCampaignAssistant: asOptionalBool(body.spinUpCampaignAssistant)
       });
@@ -2679,6 +2702,18 @@ export function createServer() {
       safeString(body.customPitch) || safeString(body.systemPrompt),
       560
     );
+    const customMessageTemplate = normalizeCampaignMessageTemplate(
+      safeString(body.customMessageTemplate) || safeString(body.customMessage) || "",
+      {
+        limit: 360,
+        literalReplacements: {
+          my_name: "Jarvis",
+          myname: "Jarvis",
+          brand_name: "True Rank Digital",
+          brandname: "True Rank Digital"
+        }
+      }
+    );
     const trustImportLeads = asOptionalBool(body.trustImportLeads) ?? true;
 
     const baseTemplate = (await getActiveTemplate()) || createDefaultTemplate("Jarvis Campaign Base");
@@ -2686,7 +2721,8 @@ export function createServer() {
       campaignName,
       campaignScope,
       toneInstruction,
-      customPitch
+      customPitch,
+      customMessageTemplate
     });
 
     let createdAssistant:
@@ -2755,6 +2791,7 @@ export function createServer() {
             `Jarvis campaign upload: ${campaignName}`,
             `Scope: ${campaignScope}`,
             `Tone: ${toneInstruction}`,
+            ...(customMessageTemplate ? [`Message: ${clipText(customMessageTemplate, 180)}`] : []),
             ...(customPitch ? [`Pitch: ${clipText(customPitch, 180)}`] : []),
             `Assistant: ${createdAssistant?.assistantId || ""}`
           ].filter(Boolean);
@@ -2851,6 +2888,7 @@ export function createServer() {
       campaignName,
       campaignScope,
       toneInstruction,
+      customMessageTemplate,
       customPitch,
       assistant: createdAssistant,
       result

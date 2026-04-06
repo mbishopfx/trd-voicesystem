@@ -11,7 +11,7 @@ import {
 } from "./stateDb.js";
 import { fetchLocationContacts, logBulkSchedulerQueuedContact, type GhlSmartListContact } from "./integrations/ghl.js";
 import { buildLeadFromCsvRow, parseCsvRows } from "./ingest.js";
-import { extractLeadVariables } from "./leadVariables.js";
+import { extractLeadVariables, normalizeCampaignMessageTemplate } from "./leadVariables.js";
 import { normalizePhone } from "./phone.js";
 import { runtimeError, runtimeInfo } from "./runtimeLogs.js";
 import { withState } from "./store.js";
@@ -91,6 +91,7 @@ interface RunVoiceCsvCampaignOptions {
   campaignScope?: string;
   toneInstruction?: string;
   customPitch?: string;
+  customMessageTemplate?: string;
   assistantId?: string;
   spinUpCampaignAssistant?: boolean;
 }
@@ -203,10 +204,25 @@ function sanitizeCampaignFreeform(value: string | undefined, limit: number, fall
   return cleaned.slice(0, limit).trim();
 }
 
-function deriveCampaignFirstMessage(profile: VoiceProfile, campaignScope: string, customPitch?: string): string {
+function deriveCampaignFirstMessage(
+  profile: VoiceProfile,
+  campaignScope: string,
+  customPitch?: string,
+  customMessageTemplate?: string
+): string {
   const owner = profile.ownerName || profile.name || "True Rank Digital";
   const base =
     `Hi {{leadFirstName}}, this is ${owner} with True Rank Digital. I reviewed {{leadCompany}}'s site and found a few things worth showing you around AI search visibility. Are you the right person to point that out to?`;
+  const normalizedMessage = normalizeCampaignMessageTemplate(customMessageTemplate || "", {
+    limit: 360,
+    literalReplacements: {
+      my_name: owner,
+      myname: owner,
+      brand_name: "True Rank Digital",
+      brandname: "True Rank Digital"
+    }
+  });
+  if (normalizedMessage) return normalizedMessage;
   const pitch = sanitizeCampaignFreeform(customPitch, 220);
   if (!pitch) return base;
 
@@ -243,11 +259,21 @@ function buildCampaignProfile(base: VoiceProfile, input: RunVoiceCsvCampaignOpti
     "Be direct, natural, consultative, and low-friction. Skip filler phrases and sound like a real strategist."
   );
   const customPitch = sanitizeCampaignFreeform(input.customPitch, 560);
+  const customMessageTemplate = normalizeCampaignMessageTemplate(input.customMessageTemplate || "", {
+    limit: 360,
+    literalReplacements: {
+      my_name: base.ownerName || base.name,
+      myname: base.ownerName || base.name,
+      brand_name: "True Rank Digital",
+      brandname: "True Rank Digital"
+    }
+  });
 
   const systemParts = [
     safeTrim(base.systemPrompt),
     `Campaign scope: ${campaignScope}`,
     `Tone direction: ${toneInstruction}`,
+    customMessageTemplate ? `Campaign opening message template: ${customMessageTemplate}` : "",
     customPitch ? `Campaign pitch guidance: ${customPitch}` : "",
     "Always make clear that we reviewed their site before calling.",
     "Drive toward a free consultation and SMS follow-up, not a full audit on the call.",
@@ -258,7 +284,7 @@ function buildCampaignProfile(base: VoiceProfile, input: RunVoiceCsvCampaignOpti
     ...base,
     name: clipText(`${base.name} ${campaignName}`, 40, base.name),
     campaignName,
-    firstMessage: deriveCampaignFirstMessage(base, campaignScope, customPitch),
+    firstMessage: deriveCampaignFirstMessage(base, campaignScope, customPitch, customMessageTemplate),
     systemPrompt: systemParts.join("\n")
   };
 }
@@ -890,7 +916,10 @@ export async function runVoiceCsvCampaign(
   const sourceFile = `voices-upload-${Date.now()}-${hashShort(options.fileName || runId)}.csv`;
   const assistantIdOverride = safeTrim(options.assistantId);
   const campaignSteeringRequested = Boolean(
-    safeTrim(options.campaignScope) || safeTrim(options.toneInstruction) || safeTrim(options.customPitch)
+    safeTrim(options.campaignScope) ||
+      safeTrim(options.toneInstruction) ||
+      safeTrim(options.customPitch) ||
+      safeTrim(options.customMessageTemplate)
   );
   const shouldSpinCampaignAssistant =
     options.spinUpCampaignAssistant !== false && !assistantIdOverride && campaignSteeringRequested;
@@ -974,6 +1003,7 @@ export async function runVoiceCsvCampaign(
           `Voices CSV run ${runId}; profile=${profile.id}; assistant=${resolvedAssistantId}`,
           safeTrim(options.campaignScope) ? `Scope: ${clipText(options.campaignScope, 180)}` : "",
           safeTrim(options.toneInstruction) ? `Tone: ${clipText(options.toneInstruction, 180)}` : "",
+          safeTrim(options.customMessageTemplate) ? `Message: ${clipText(options.customMessageTemplate, 180)}` : "",
           safeTrim(options.customPitch) ? `Pitch: ${clipText(options.customPitch, 180)}` : ""
         ]
           .filter(Boolean)

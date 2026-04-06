@@ -418,6 +418,9 @@
                     <label class="text-[11px] font-bold uppercase tracking-wider text-outline">Custom Pitch / System Message
                       <textarea id="campaignPitchInput" rows="5" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" placeholder="Paste the custom pitch, talk track, or system message here. The server will clean it and turn it into a campaign-specific Jarvis assistant prompt."></textarea>
                     </label>
+                    <label class="text-[11px] font-bold uppercase tracking-wider text-outline">Custom Opening Message
+                      <textarea id="campaignMessageInput" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" placeholder="Example: hey [first_name], this is Jarvis with True Rank Digital. I reviewed [company_name]'s site and found a few issues around AI search visibility. are you the right person to show that to?"></textarea>
+                    </label>
                   </div>
                 </div>
                 <div class="flex items-center justify-between rounded-lg border-b border-outline-variant/10 bg-white p-4">
@@ -825,6 +828,9 @@
               </label>
               <label class="text-xs font-bold uppercase tracking-wider text-outline lg:col-span-3">Custom Pitch / System Message
                 <textarea id="voicesCsvCustomPitch" rows="5" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" placeholder="Paste the custom pitch or system message here. If enabled below, the system will spin a campaign-specific assistant from this voice."></textarea>
+              </label>
+              <label class="text-xs font-bold uppercase tracking-wider text-outline lg:col-span-3">Custom Opening Message
+                <textarea id="voicesCsvCustomMessage" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" placeholder="Example: hey [first_name], this is [my_name] with True Rank Digital. I reviewed [company_name]'s site and found a few things worth showing you around AI visibility. are you the owner?"></textarea>
               </label>
               <label class="flex items-center gap-2 text-xs font-semibold text-outline lg:col-span-3">
                 <input id="voicesCsvSpinAssistant" type="checkbox" class="h-4 w-4 rounded border-outline-variant/40" checked />
@@ -2592,12 +2598,14 @@
         const campaignScope = document.getElementById("campaignScopeInput")?.value?.trim() || "";
         const toneInstruction = document.getElementById("campaignToneInput")?.value?.trim() || "";
         const customPitch = document.getElementById("campaignPitchInput")?.value?.trim() || "";
+        const customMessageTemplate = document.getElementById("campaignMessageInput")?.value?.trim() || "";
         const data = await postJson("/api/campaigns/jarvis/upload-run", {
           files: payloadFiles,
           campaignName,
           campaignScope,
           toneInstruction,
           customPitch,
+          customMessageTemplate,
           trustImportLeads: true
         });
         const queued = Number(data?.result?.queued || 0);
@@ -3093,6 +3101,7 @@
             const campaignScope = document.getElementById("voicesCsvCampaignScope")?.value?.trim() || undefined;
             const toneInstruction = document.getElementById("voicesCsvToneInstruction")?.value?.trim() || undefined;
             const customPitch = document.getElementById("voicesCsvCustomPitch")?.value?.trim() || undefined;
+            const customMessageTemplate = document.getElementById("voicesCsvCustomMessage")?.value?.trim() || undefined;
             const spinUpCampaignAssistant = Boolean(document.getElementById("voicesCsvSpinAssistant")?.checked);
             const assistantId = spinUpCampaignAssistant ? undefined : profile.assistantId;
 
@@ -3103,6 +3112,7 @@
               campaignScope,
               toneInstruction,
               customPitch,
+              customMessageTemplate,
               assistantId,
               spinUpCampaignAssistant,
               trustImportLeads: true
