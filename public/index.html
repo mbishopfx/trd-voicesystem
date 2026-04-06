@@ -381,11 +381,16 @@
             <div class="relative z-10 mb-8 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
               <div>
                 <h3 class="font-headline text-2xl font-extrabold text-on-surface">Campaign Center</h3>
-                <p class="text-sm font-medium text-outline">Upload lead lists and control outbound run starts.</p>
+                <p class="text-sm font-medium text-outline">Prepare a Jarvis campaign first, then explicitly start calls when you are ready.</p>
               </div>
-              <button id="launchSequenceBtn" class="primary-gradient rounded-lg px-8 py-3 text-xs font-bold uppercase tracking-widest text-white shadow-xl transition-all active:scale-95">
-                Launch Sequence
-              </button>
+              <div class="flex flex-wrap gap-2">
+                <button id="prepareSequenceBtn" class="rounded-lg border border-secondary/35 bg-secondary/15 px-6 py-3 text-xs font-bold uppercase tracking-widest text-secondary transition-all active:scale-95">
+                  Prepare Campaign
+                </button>
+                <button id="launchSequenceBtn" class="primary-gradient rounded-lg px-8 py-3 text-xs font-bold uppercase tracking-widest text-white shadow-xl transition-all active:scale-95">
+                  Start Jarvis Calls
+                </button>
+              </div>
             </div>
 
             <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -421,6 +426,9 @@
                     <label class="text-[11px] font-bold uppercase tracking-wider text-outline">Custom Opening Message
                       <textarea id="campaignMessageInput" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" placeholder="Example: hey [first_name], this is Jarvis with True Rank Digital. I reviewed [company_name]'s site and found a few issues around AI search visibility. are you the right person to show that to?"></textarea>
                     </label>
+                    <label class="text-[11px] font-bold uppercase tracking-wider text-outline">Dispatch Count
+                      <input id="campaignDispatchCountInput" type="number" min="1" max="200" value="25" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
+                    </label>
                   </div>
                 </div>
                 <div class="flex items-center justify-between rounded-lg border-b border-outline-variant/10 bg-white p-4">
@@ -443,7 +451,7 @@
                     <span class="text-xs font-bold uppercase tracking-wider">Lead Enrichment</span>
                   </div>
                   <p id="ingestSummary" class="text-xs leading-relaxed text-on-secondary-fixed-variant">
-                    Upload a CSV and launch sequence. Deduplication and guardrails are applied automatically.
+                    Upload a CSV, prepare the campaign, then press Start Jarvis Calls when you want the dialer to spawn it.
                   </p>
                 </div>
               </div>
@@ -602,18 +610,25 @@
             </div>
 
             <div class="mt-4 flex flex-wrap gap-3">
-              <button id="prospectorStartBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Phase 1 Gather</button>
-              <button id="prospectorGenerateBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Phase 2 Build + Deploy</button>
-              <button id="prospectorPhase3Btn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Phase 3 Link + Sync</button>
-              <button id="prospectorGhlSyncBtn" class="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-emerald-700">Sync Scraped Leads To GHL</button>
-              <button id="prospectorPhase4Btn" class="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-indigo-700">Phase 4 Script</button>
-              <button id="prospectorPhase5Btn" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-700">Phase 5 Specialized Call</button>
-              <button id="prospectorPipelineBtn" class="rounded-xl border border-slate-400 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-700">Run Full Pipeline</button>
-              <button id="prospectorScreenshotBtn" class="rounded-xl border border-tertiary/35 bg-tertiary/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-tertiary">Generate Screenshots</button>
-              <button id="prospectorReadyBtn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Mark Ready For Call</button>
-              <button id="prospectorQueueBtn" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-700">Release To Queue</button>
+              <button id="prospectorStartBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Search Leads</button>
+              <button id="prospectorNextStepBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Next Step</button>
+              <button id="prospectorPhase5Btn" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-700">Queue Calls</button>
               <button id="prospectorRefreshBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Refresh Runs</button>
             </div>
+
+            <details class="mt-4 rounded-xl border border-outline-variant/20 bg-white p-4">
+              <summary class="cursor-pointer text-xs font-bold uppercase tracking-wider text-outline">Advanced Prospector Controls</summary>
+              <div class="mt-4 flex flex-wrap gap-3">
+                <button id="prospectorGenerateBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Phase 2 Build + Deploy</button>
+                <button id="prospectorPhase3Btn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Phase 3 Link + Sync</button>
+                <button id="prospectorGhlSyncBtn" class="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-emerald-700">Sync Scraped Leads To GHL</button>
+                <button id="prospectorPhase4Btn" class="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-indigo-700">Phase 4 Script</button>
+                <button id="prospectorPipelineBtn" class="rounded-xl border border-slate-400 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-wider text-slate-700">Run Full Pipeline</button>
+                <button id="prospectorScreenshotBtn" class="rounded-xl border border-tertiary/35 bg-tertiary/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-tertiary">Generate Screenshots</button>
+                <button id="prospectorReadyBtn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Mark Ready For Call</button>
+                <button id="prospectorQueueBtn" class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-700">Release To Queue</button>
+              </div>
+            </details>
 
             <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-4">
               <div class="rounded-xl border border-outline-variant/30 bg-white p-4 text-sm"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">Fetched Prospects</div><div id="prospectorFetchedCount" class="mt-2 font-headline text-2xl font-extrabold">0</div></div>
@@ -837,7 +852,7 @@
                 Spin a campaign-specific assistant from the selected voice when steering fields are provided
               </label>
               <div class="lg:col-span-3">
-                <button id="voicesCsvRunBtn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Run CSV Campaign</button>
+                <button id="voicesCsvRunBtn" class="rounded-xl border border-teal-300 bg-teal-50 px-4 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Prepare CSV Campaign</button>
                 <button id="voicesStartCampaignBtn" class="ml-2 rounded-xl border border-secondary/35 bg-secondary/15 px-4 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Start Campaign Calls</button>
               </div>
             </div>
@@ -1173,6 +1188,8 @@
       const state = {
         activeTab: "dashboard",
         files: [],
+        pendingJarvisCampaign: null,
+        pendingVoicesCsvCampaign: null,
         logs: [],
         leads: [],
         prospectorRuns: [],
@@ -1227,6 +1244,13 @@
         const parsed = Number(raw);
         if (!Number.isFinite(parsed)) return 10;
         return Math.min(100, Math.max(1, Math.trunc(parsed)));
+      }
+
+      function campaignDispatchCountValue() {
+        const raw = document.getElementById("campaignDispatchCountInput")?.value;
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed)) return 25;
+        return Math.min(200, Math.max(1, Math.trunc(parsed)));
       }
 
       function prospectorAssistantIdValue() {
@@ -2366,9 +2390,31 @@
         const missing = prospectLeads.filter((lead) => lead.prospectWebsiteStatus === "missing").length;
         const result = document.getElementById("prospectorResult");
         if (result) {
-          result.innerHTML = `<div class="space-y-1"><p><strong>Phase 1 run:</strong> ${escapeHtml(run.id || "n/a")}</p><p><strong>Market:</strong> ${escapeHtml(icp)} in ${escapeHtml(city)}, ${escapeHtml(stateValue)}</p><p><strong>Collected:</strong> ${escapeHtml(String(prospectLeads.length))} prospects | <strong>Missing website:</strong> ${escapeHtml(String(missing))}</p><p class="text-xs text-outline">Use Phase 2 to generate and deploy premium pages via Gemini.</p></div>`;
+          result.innerHTML = `<div class="space-y-1"><p><strong>Search run:</strong> ${escapeHtml(run.id || "n/a")}</p><p><strong>Market:</strong> ${escapeHtml(icp)} in ${escapeHtml(city)}, ${escapeHtml(stateValue)}</p><p><strong>Collected:</strong> ${escapeHtml(String(prospectLeads.length))} prospects | <strong>Missing website:</strong> ${escapeHtml(String(missing))}</p><p class="text-xs text-outline">Search is done. Press Next Step to build, deploy, sync to GHL, and script the leads.</p></div>`;
         }
-        showToast(`Phase 1 complete for ${icp} in ${city}, ${stateValue}`);
+        showToast(`Lead search complete for ${icp} in ${city}, ${stateValue}`);
+      }
+
+      async function runProspectorNextStep() {
+        const data = await postJson("/api/prospector/pipeline", {
+          runPhase1: false,
+          runPhase2: true,
+          runPhase3: true,
+          runPhase4: true,
+          runPhase5: false,
+          limit: prospectorLimitValue()
+        });
+        await refreshProspectorRuns();
+        await refreshLeads();
+        const p2 = data.result?.phase2 || {};
+        const p3 = data.result?.phase3 || {};
+        const p4 = data.result?.phase4 || {};
+        const errors = Array.isArray(data.result?.errors) ? data.result.errors : [];
+        const result = document.getElementById("prospectorResult");
+        if (result) {
+          result.innerHTML = `<div class="space-y-1"><p><strong>Next step complete.</strong></p><p><strong>Built + deployed:</strong> ${escapeHtml(String(p2.deployed || 0))} | <strong>GHL synced:</strong> ${escapeHtml(String(p3.ghlSynced || 0))} | <strong>Scripted:</strong> ${escapeHtml(String(p4.scripted || 0))}</p><p class="text-xs text-outline">${errors.length ? `Pipeline recorded ${errors.length} error(s). Open Advanced Prospector Controls if you need phase-level actions.` : "Leads are prepared for review and can be queued for calling when ready."}</p></div>`;
+        }
+        showToast(`Next step complete. deployed=${p2.deployed || 0}, ghl=${p3.ghlSynced || 0}, scripted=${p4.scripted || 0}`);
       }
 
       async function refreshAnalytics() {
@@ -2581,44 +2627,140 @@
           .join("");
       }
 
-      async function runLaunch() {
+      async function buildJarvisCampaignPayload() {
         if (state.files.length === 0) {
-          const data = await postJson("/api/ingest/run", {});
-          const summaries = data.summaries || [];
-          showToast(`Ingest complete. files=${summaries.length}`);
-          return;
+          throw new Error("Upload at least one CSV file first.");
         }
-
         const payloadFiles = [];
         for (const file of state.files) {
           payloadFiles.push({ fileName: file.name, csvContent: await readFile(file) });
         }
 
-        const campaignName = document.getElementById("campaignNameInput")?.value?.trim() || "Jarvis CSV Campaign";
-        const campaignScope = document.getElementById("campaignScopeInput")?.value?.trim() || "";
-        const toneInstruction = document.getElementById("campaignToneInput")?.value?.trim() || "";
-        const customPitch = document.getElementById("campaignPitchInput")?.value?.trim() || "";
-        const customMessageTemplate = document.getElementById("campaignMessageInput")?.value?.trim() || "";
-        const data = await postJson("/api/campaigns/jarvis/upload-run", {
+        return {
           files: payloadFiles,
-          campaignName,
-          campaignScope,
-          toneInstruction,
-          customPitch,
-          customMessageTemplate,
+          dispatchCount: campaignDispatchCountValue(),
+          campaignName: document.getElementById("campaignNameInput")?.value?.trim() || "Jarvis CSV Campaign",
+          campaignScope: document.getElementById("campaignScopeInput")?.value?.trim() || "",
+          toneInstruction: document.getElementById("campaignToneInput")?.value?.trim() || "",
+          customPitch: document.getElementById("campaignPitchInput")?.value?.trim() || "",
+          customMessageTemplate: document.getElementById("campaignMessageInput")?.value?.trim() || ""
+        };
+      }
+
+      async function prepareJarvisCampaign() {
+        const payload = await buildJarvisCampaignPayload();
+        state.pendingJarvisCampaign = payload;
+        setText(
+          "ingestSummary",
+          `Prepared Jarvis campaign "${payload.campaignName}" with ${payload.files.length} file(s). Nothing has been queued or dialed yet. Press Start Jarvis Calls when you want to spawn the run.`
+        );
+        showToast(`Prepared Jarvis campaign "${payload.campaignName}".`);
+      }
+
+      async function startPreparedJarvisCampaign() {
+        const payload = state.pendingJarvisCampaign || (await buildJarvisCampaignPayload());
+        const data = await postJson("/api/campaigns/jarvis/upload-run", {
+          files: payload.files,
+          campaignName: payload.campaignName,
+          campaignScope: payload.campaignScope,
+          toneInstruction: payload.toneInstruction,
+          customPitch: payload.customPitch,
+          customMessageTemplate: payload.customMessageTemplate,
           trustImportLeads: true
         });
         const queued = Number(data?.result?.queued || 0);
-        const assistantId = data?.assistant?.assistantId || "--";
-        showToast(`Jarvis campaign ready. queued=${queued} assistant=${assistantId}`);
+        const assistantId = data?.assistant?.assistantId || "";
+        const dispatch = await postJson("/api/dialer/start", {
+          maxDispatch: payload.dispatchCount,
+          ignoreCallingWindow: true,
+          assistantId: assistantId || undefined,
+          campaignName: payload.campaignName
+        });
+        const dispatched = Number(dispatch?.result?.dispatched || 0);
+        showToast(`Jarvis campaign started. queued=${queued} dispatched=${dispatched}`);
         setText(
           "ingestSummary",
-          `Jarvis campaign "${campaignName}" queued ${queued} lead(s). Assistant ${assistantId} will keep the TRD consult objective while using your upload-specific scope, tone, and cleaned pitch guidance.`
+          `Jarvis campaign "${payload.campaignName}" queued ${queued} lead(s) and dispatched ${dispatched}. Assistant ${assistantId || "--"} will use your upload-specific scope, tone, and cleaned opening message.`
         );
+        state.pendingJarvisCampaign = null;
         state.files = [];
         const input = document.getElementById("csvInput");
         if (input) input.value = "";
         setText("fileSummary", "Drag and drop your .CSV file here");
+      }
+
+      async function buildVoicesCsvCampaignPayload() {
+        const select = document.getElementById("voicesCsvProfileId");
+        if (!(select instanceof HTMLSelectElement)) {
+          throw new Error("Voice selector is unavailable.");
+        }
+        const profileId = select.value?.trim() || "";
+        if (!profileId) throw new Error("Select a voice profile first.");
+
+        const profiles = state.voicesStatus?.profiles || [];
+        const profile = profiles.find((row) => row.id === profileId);
+        if (!profile) throw new Error("Selected voice profile was not found.");
+        if (!profile.assistantId) throw new Error("Selected profile needs an assistant ID. Spin up the assistant first.");
+
+        const fileInput = document.getElementById("voicesCsvFile");
+        if (!(fileInput instanceof HTMLInputElement) || !fileInput.files || !fileInput.files[0]) {
+          throw new Error("Upload a CSV file first.");
+        }
+        const file = fileInput.files[0];
+        const csvContent = await readFile(file);
+        const spinUpCampaignAssistant = Boolean(document.getElementById("voicesCsvSpinAssistant")?.checked);
+        return {
+          profileId,
+          profile,
+          fileName: file.name,
+          csvContent,
+          campaignName: document.getElementById("voicesCsvCampaignName")?.value?.trim() || undefined,
+          campaignScope: document.getElementById("voicesCsvCampaignScope")?.value?.trim() || undefined,
+          toneInstruction: document.getElementById("voicesCsvToneInstruction")?.value?.trim() || undefined,
+          customPitch: document.getElementById("voicesCsvCustomPitch")?.value?.trim() || undefined,
+          customMessageTemplate: document.getElementById("voicesCsvCustomMessage")?.value?.trim() || undefined,
+          spinUpCampaignAssistant,
+          assistantId: spinUpCampaignAssistant ? undefined : profile.assistantId,
+          maxDispatch: Math.min(200, Math.max(1, Math.trunc(Number(document.getElementById("voicesStartDispatchCount")?.value || 25))))
+        };
+      }
+
+      async function prepareVoicesCsvCampaign() {
+        const payload = await buildVoicesCsvCampaignPayload();
+        state.pendingVoicesCsvCampaign = payload;
+        renderVoicesResult(
+          `<p><strong>Prepared:</strong> ${escapeHtml(payload.fileName)} for ${escapeHtml(payload.profile.name)}</p><p><strong>Campaign:</strong> ${escapeHtml(payload.campaignName || payload.profile.campaignName || "--")}</p><p><strong>Status:</strong> Waiting for Start Campaign Calls. Nothing has been queued or dispatched yet.</p>`
+        );
+        showToast(`Prepared voice campaign for ${payload.profile.name}.`);
+      }
+
+      async function startPreparedVoicesCsvCampaign() {
+        const payload = state.pendingVoicesCsvCampaign || (await buildVoicesCsvCampaignPayload());
+        const data = await postJson(`/api/voices/profile/${encodeURIComponent(payload.profileId)}/upload-run`, {
+          fileName: payload.fileName,
+          csvContent: payload.csvContent,
+          campaignName: payload.campaignName,
+          campaignScope: payload.campaignScope,
+          toneInstruction: payload.toneInstruction,
+          customPitch: payload.customPitch,
+          customMessageTemplate: payload.customMessageTemplate,
+          assistantId: payload.assistantId,
+          spinUpCampaignAssistant: payload.spinUpCampaignAssistant,
+          trustImportLeads: true
+        });
+
+        const dispatch = await postJson("/api/dialer/start", {
+          maxDispatch: payload.maxDispatch,
+          ignoreCallingWindow: true,
+          voiceProfileId: payload.profileId,
+          campaignName: payload.campaignName || payload.profile.campaignName || undefined
+        });
+
+        await Promise.all([refreshVoices(), refreshStatus(), refreshLeads(), refreshLogs()]);
+        const dispatched = dispatch?.result?.dispatched || 0;
+        renderVoicesResult(`<p><strong>CSV Run:</strong> ${escapeHtml(data.run?.id || "--")} (${escapeHtml(data.run?.status || "--")})</p><p><strong>Assistant:</strong> ${escapeHtml(data.run?.assistantId || payload.profile.assistantId || "--")}</p><p><strong>Dispatch:</strong> ${escapeHtml(String(dispatched))} lead(s) started.</p><p><strong>Summary:</strong> ${escapeHtml(data.run?.summary || "--")}</p>`);
+        state.pendingVoicesCsvCampaign = null;
+        showToast(`Voice campaign started. dispatched=${dispatched}`);
       }
 
       function manualPayload() {
@@ -2694,12 +2836,25 @@
 
         const browseBtn = document.getElementById("browseFilesBtn");
         const input = document.getElementById("csvInput");
+        const prepareBtn = document.getElementById("prepareSequenceBtn");
         const launchBtn = document.getElementById("launchSequenceBtn");
 
         browseBtn.addEventListener("click", () => input.click());
         input.addEventListener("change", () => {
           state.files = Array.from(input.files || []);
+          state.pendingJarvisCampaign = null;
           setText("fileSummary", state.files.length ? `${state.files.length} file(s) selected` : "Drag and drop your .CSV file here");
+        });
+
+        prepareBtn.addEventListener("click", async () => {
+          prepareBtn.disabled = true;
+          try {
+            await prepareJarvisCampaign();
+          } catch (error) {
+            showToast(String(error), true);
+          } finally {
+            prepareBtn.disabled = false;
+          }
         });
 
         launchBtn.addEventListener("click", async () => {
@@ -2710,7 +2865,7 @@
               showToast("Healthcheck failed. Resolve route connectivity before launch.", true);
               return;
             }
-            await runLaunch();
+            await startPreparedJarvisCampaign();
             await refreshStatus();
             await refreshLogs();
             await refreshLeads();
@@ -2730,7 +2885,7 @@
               showToast("Healthcheck failed. Resolve route connectivity before going live.", true);
               return;
             }
-            await runLaunch();
+            await startPreparedJarvisCampaign();
             await refreshStatus();
             await refreshLogs();
             await refreshLeads();
@@ -2800,6 +2955,14 @@
         document.getElementById("prospectorStartBtn").addEventListener("click", async () => {
           try {
             await startProspector();
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("prospectorNextStepBtn").addEventListener("click", async () => {
+          try {
+            await runProspectorNextStep();
           } catch (error) {
             showToast(String(error), true);
           }
@@ -3079,48 +3242,7 @@
 
         document.getElementById("voicesCsvRunBtn").addEventListener("click", async () => {
           try {
-            const select = document.getElementById("voicesCsvProfileId");
-            if (!(select instanceof HTMLSelectElement)) {
-              throw new Error("Voice selector is unavailable.");
-            }
-            const profileId = select.value?.trim() || "";
-            if (!profileId) throw new Error("Select a voice profile first.");
-
-            const profiles = state.voicesStatus?.profiles || [];
-            const profile = profiles.find((row) => row.id === profileId);
-            if (!profile) throw new Error("Selected voice profile was not found.");
-            if (!profile.assistantId) throw new Error("Selected profile needs an assistant ID. Spin up the assistant first.");
-
-            const fileInput = document.getElementById("voicesCsvFile");
-            if (!(fileInput instanceof HTMLInputElement) || !fileInput.files || !fileInput.files[0]) {
-              throw new Error("Upload a CSV file first.");
-            }
-            const file = fileInput.files[0];
-            const csvContent = await readFile(file);
-            const campaignName = document.getElementById("voicesCsvCampaignName")?.value?.trim() || undefined;
-            const campaignScope = document.getElementById("voicesCsvCampaignScope")?.value?.trim() || undefined;
-            const toneInstruction = document.getElementById("voicesCsvToneInstruction")?.value?.trim() || undefined;
-            const customPitch = document.getElementById("voicesCsvCustomPitch")?.value?.trim() || undefined;
-            const customMessageTemplate = document.getElementById("voicesCsvCustomMessage")?.value?.trim() || undefined;
-            const spinUpCampaignAssistant = Boolean(document.getElementById("voicesCsvSpinAssistant")?.checked);
-            const assistantId = spinUpCampaignAssistant ? undefined : profile.assistantId;
-
-            const data = await postJson(`/api/voices/profile/${encodeURIComponent(profileId)}/upload-run`, {
-              fileName: file.name,
-              csvContent,
-              campaignName,
-              campaignScope,
-              toneInstruction,
-              customPitch,
-              customMessageTemplate,
-              assistantId,
-              spinUpCampaignAssistant,
-              trustImportLeads: true
-            });
-
-            await Promise.all([refreshVoices(), refreshStatus(), refreshLeads(), refreshLogs()]);
-            renderVoicesResult(`<p><strong>CSV Run:</strong> ${escapeHtml(data.run?.id || "--")} (${escapeHtml(data.run?.status || "--")})</p><p><strong>Assistant:</strong> ${escapeHtml(data.run?.assistantId || profile.assistantId || "--")}</p><p><strong>Summary:</strong> ${escapeHtml(data.run?.summary || "--")}</p>`);
-            showToast("Voice CSV campaign started.");
+            await prepareVoicesCsvCampaign();
           } catch (error) {
             renderVoicesResult(escapeHtml(String(error)), true);
             showToast(String(error), true);
@@ -3129,24 +3251,7 @@
 
         document.getElementById("voicesStartCampaignBtn").addEventListener("click", async () => {
           try {
-            const select = document.getElementById("voicesCsvProfileId");
-            if (!(select instanceof HTMLSelectElement)) throw new Error("Voice selector is unavailable.");
-            const profileId = select.value?.trim() || "";
-            if (!profileId) throw new Error("Select a voice profile first.");
-
-            const countRaw = Number(document.getElementById("voicesStartDispatchCount")?.value || 25);
-            const maxDispatch = Math.min(200, Math.max(1, Math.trunc(countRaw)));
-            const data = await postJson("/api/dialer/start", {
-              maxDispatch,
-              ignoreCallingWindow: true,
-              voiceProfileId: profileId
-            });
-
-            await Promise.all([refreshStatus(), refreshLeads(), refreshLogs(), refreshVoices()]);
-            const dispatched = data.result?.dispatched || 0;
-            const requested = data.result?.requested || maxDispatch;
-            renderVoicesResult(`<p><strong>Campaign Start:</strong> dispatched ${escapeHtml(String(dispatched))} of ${escapeHtml(String(requested))} requested for selected voice.</p>`);
-            showToast(`Campaign start sent. dispatched=${dispatched}/${requested}`);
+            await startPreparedVoicesCsvCampaign();
           } catch (error) {
             renderVoicesResult(escapeHtml(String(error)), true);
             showToast(String(error), true);

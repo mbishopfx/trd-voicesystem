@@ -19,6 +19,8 @@ export interface DialOptions {
   ignoreCooldown?: boolean;
   ignoreCreditGuard?: boolean;
   voiceProfileId?: string;
+  assistantId?: string;
+  campaignName?: string;
 }
 
 export function setDialerPostCallCooldown(delayMs: number): void {
@@ -126,6 +128,8 @@ function isEligible(lead: Lead, now: Date, options?: DialOptions): boolean {
   if (lead.dnc) return false;
   if (lead.sourceFile === 'prospector-dashboard' && !lead.prospectAutoDialApproved) return false;
   if (options?.voiceProfileId && lead.voiceProfileId !== options.voiceProfileId) return false;
+  if (options?.assistantId && (lead.assistantIdOverride || "") !== options.assistantId) return false;
+  if (options?.campaignName && (lead.campaign || "") !== options.campaignName) return false;
 
   if (lead.nextAttemptAt) {
     const dueAt = Date.parse(lead.nextAttemptAt);
@@ -349,7 +353,9 @@ export async function dispatchDialerBurst(
       ignoreCallingWindow: input?.ignoreCallingWindow,
       ignoreCooldown: input?.ignoreCooldown,
       ignoreCreditGuard: input?.ignoreCreditGuard,
-      voiceProfileId: input?.voiceProfileId
+      voiceProfileId: input?.voiceProfileId,
+      assistantId: input?.assistantId,
+      campaignName: input?.campaignName
     });
     messages.push(result.message);
     if (result.dispatched) {

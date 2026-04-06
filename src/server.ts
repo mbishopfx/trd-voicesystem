@@ -2378,18 +2378,24 @@ export function createServer() {
     const ignoreCallingWindow = asBool(body.ignoreCallingWindow, true);
     const ignoreCooldown = asBool(body.ignoreCooldown, false);
     const voiceProfileId = safeString(body.voiceProfileId);
+    const assistantId = safeString(body.assistantId);
+    const campaignName = safeString(body.campaignName);
 
     const result = await dispatchDialerBurst({
       maxDispatch,
       ignoreCallingWindow,
       ignoreCooldown,
-      voiceProfileId
+      voiceProfileId,
+      assistantId,
+      campaignName
     });
     runtimeInfo("dialer", "manual campaign start requested", {
       maxDispatch,
       ignoreCallingWindow,
       ignoreCooldown,
       voiceProfileId: voiceProfileId || "",
+      assistantId: assistantId || "",
+      campaignName: campaignName || "",
       dispatched: result.dispatched,
       idle: result.idle
     });
