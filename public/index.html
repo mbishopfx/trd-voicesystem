@@ -1208,13 +1208,14 @@
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Run</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Campaign</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Status</th>
+                    <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Progress</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Sent</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Failed / Skipped</th>
                     <th class="px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-outline">Started</th>
                   </tr>
                 </thead>
                 <tbody id="smsCampaignRunsRows" class="divide-y divide-outline-variant/10">
-                  <tr><td colspan="6" class="px-4 py-4 text-sm text-outline">No SMS campaign runs yet.</td></tr>
+                  <tr><td colspan="7" class="px-4 py-4 text-sm text-outline">No SMS campaign runs yet.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1858,7 +1859,7 @@
         const root = document.getElementById("smsCampaignRunsRows");
         if (!root) return;
         if (!Array.isArray(runs) || runs.length === 0) {
-          root.innerHTML = `<tr><td colspan="6" class="px-4 py-4 text-sm text-outline">No SMS campaign runs yet.</td></tr>`;
+          root.innerHTML = `<tr><td colspan="7" class="px-4 py-4 text-sm text-outline">No SMS campaign runs yet.</td></tr>`;
           return;
         }
 
@@ -1868,6 +1869,11 @@
             <td class="px-4 py-3 text-xs">${escapeHtml(run.id || "--")}</td>
             <td class="px-4 py-3">${escapeHtml(run.campaignName || "--")}</td>
             <td class="px-4 py-3">${escapeHtml(run.status || "--")}</td>
+            <td class="px-4 py-3 text-xs">${escapeHtml(
+              run.batchCount
+                ? `${String(run.processedCount || 0)}/${String(run.totalRows || 0)} rows · ${String(run.batchCount || 0)} batches`
+                : `${String(run.processedCount || run.totalRows || 0)}/${String(run.totalRows || 0)} rows`
+            )}</td>
             <td class="px-4 py-3">${escapeHtml(String(run.sentCount || 0))}</td>
             <td class="px-4 py-3">${escapeHtml(String(run.failedCount || 0))} / ${escapeHtml(String(run.skippedCount || 0))}</td>
             <td class="px-4 py-3 text-xs">${escapeHtml(run.startedAt ? new Date(run.startedAt).toLocaleString() : "--")}</td>
@@ -3731,6 +3737,9 @@
           if (state.activeTab === "scheduler") refreshScheduler().catch(() => {});
           if (state.activeTab === "voices") refreshVoices().catch(() => {});
           if (state.activeTab === "prospector") refreshProspectorRuns().catch(() => {});
+          if (state.activeTab === "sms-campaigns") {
+            refreshSmsCampaignStatus().catch(() => {});
+          }
           if (state.activeTab === "sms-inbox") {
             refreshSmsCampaignStatus().catch(() => {});
             const autoToggle = document.getElementById("smsCampaignAutoReplyToggle");

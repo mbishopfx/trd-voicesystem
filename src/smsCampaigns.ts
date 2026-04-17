@@ -36,7 +36,12 @@ export interface SmsCampaignRunLog {
   campaignName: string;
   templatePreview: string;
   templateMode?: "personalized" | "manual";
+  background?: boolean;
+  batchSize?: number;
+  batchPauseMs?: number;
   totalRows: number;
+  processedCount?: number;
+  batchCount?: number;
   validRows: number;
   sentCount: number;
   failedCount: number;
@@ -75,6 +80,9 @@ export interface RunSmsCsvCampaignOptions {
   template?: string;
   trustImportLeads?: boolean;
   useVariables?: boolean;
+  background?: boolean;
+  batchSize?: number;
+  batchPauseMs?: number;
 }
 
 export interface SmsReplyFollowUpScanResult {
@@ -112,6 +120,8 @@ let replyScanTimer: NodeJS.Timeout | undefined;
 let replyScanInFlight = false;
 let replyScanLastTickAt: string | undefined;
 let replyScanLastRunAt: string | undefined;
+let csvCampaignInFlight = false;
+const csvCampaignBackgroundRuns = new Set<string>();
 
 function createEmptyState(): SmsCampaignState {
   return {
@@ -337,6 +347,27 @@ function appendRun(state: SmsCampaignState, run: SmsCampaignRunLog): void {
     state.runs = state.runs.slice(state.runs.length - MAX_RUN_LOGS);
   }
   state.updatedAt = nowIso();
+}
+
+async function upsertRunLog(run: SmsCampaignRunLog): Promise<void> {
+  await withSmsCampaignState((state) => {
+    const target = state.runs.find((item) => item.id === run.id);
+    if (target) {
+      Object.assign(target, run);
+    } else {
+      appendRun(state, run);
+    }
+  });
+}
+
+function countBatches(totalRows: number, batchSize: number): number {
+  if (totalRows <= 0) return 0;
+  return Math.ceil(totalRows / Math.max(1, batchSize));
+}
+
+function shouldRunSmsCampaignInBackground(rowCount: number, background?: boolean): boolean {
+  if (typeof background === "boolean") return background;
+  return rowCount >= config.smsCampaignBackgroundThreshold;
 }
 
 function toText(value: unknown): string {
@@ -665,6 +696,18 @@ export function defaultSmsCampaignManualTemplate(): string {
   return config.smsCampaignDefaultManualTemplate;
 }
 
+function normalizeSmsCampaignBatchSize(value?: number): number {
+  const fallback = Math.max(1, Math.trunc(config.smsCampaignBatchSize || 25));
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.min(100, Math.trunc(value)));
+}
+
+function normalizeSmsCampaignBatchPauseMs(value?: number): number {
+  const fallback = Math.max(0, Math.trunc(config.smsCampaignBatchPauseMs || 0));
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(30_000, Math.trunc(value)));
+}
+
 export function getSmsCampaignSchedulerStatus(): SmsCampaignSchedulerStatus {
   return {
     enabled: config.smsReplyScanEnabled,
@@ -694,53 +737,31 @@ export async function getSmsCampaignDashboard(): Promise<{
   };
 }
 
-export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Promise<SmsCampaignRunLog> {
-  if (!isTwilioSmsConfigured()) {
-    throw new Error("Twilio SMS is not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)");
-  }
-
-  const csvContent = String(options.csvContent || "");
-  if (!csvContent.trim()) {
-    throw new Error("csvContent is required");
-  }
-
-  const template = String(options.template || defaultSmsCampaignTemplate()).trim();
-  if (!template) {
-    throw new Error("SMS template is required");
-  }
-  const useVariables = options.useVariables !== false;
-  const renderTemplateForLead = useVariables
-    ? template
-    : generateManualSmsTemplate({
-        prompt: template,
-        fallback: defaultSmsCampaignManualTemplate(),
-        limit: 320
-      });
-
-  const rows = parseCsvRows(csvContent);
-  const runId = `sms-csv-${Date.now()}`;
-  const startedAt = nowIso();
-  const fileName = safeFileName(options.fileName);
-  const campaignName = (String(options.campaignName || "").trim() || `SMS Campaign ${new Date().toLocaleDateString()}`).slice(0, 120);
-  const cpsDelayMs = Math.max(0, Math.ceil(1000 / Math.max(0.1, config.twilioCps)));
-  const existingState = await loadSmsCampaignState();
-  const optedOutPhones = new Set(
-    Object.entries(existingState.replyMarkers || {})
-      .filter(([, marker]) => Boolean(marker?.optedOutAt))
-      .map(([phone]) => normalizeSmsPhone(phone))
-      .filter(Boolean)
-  );
-
-  const run: SmsCampaignRunLog = {
-    id: runId,
+function createSmsCampaignRun(input: {
+  fileName: string;
+  campaignName: string;
+  template: string;
+  templateMode: "personalized" | "manual";
+  totalRows: number;
+  background: boolean;
+  batchSize: number;
+  batchPauseMs: number;
+}): SmsCampaignRunLog {
+  return {
+    id: `sms-csv-${Date.now()}`,
     trigger: "manual",
     status: "running",
-    startedAt,
-    fileName,
-    campaignName,
-    templatePreview: template.slice(0, 240),
-    templateMode: useVariables ? "personalized" : "manual",
-    totalRows: rows.length,
+    startedAt: nowIso(),
+    fileName: input.fileName,
+    campaignName: input.campaignName,
+    templatePreview: input.template.slice(0, 240),
+    templateMode: input.templateMode,
+    background: input.background,
+    batchSize: input.batchSize,
+    batchPauseMs: input.batchPauseMs,
+    totalRows: input.totalRows,
+    processedCount: 0,
+    batchCount: countBatches(input.totalRows, input.batchSize),
     validRows: 0,
     sentCount: 0,
     failedCount: 0,
@@ -748,31 +769,51 @@ export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Prom
     invalidCount: 0,
     blockedCount: 0,
     duplicateCount: 0,
-    summary: "SMS campaign started.",
+    summary: input.background ? "SMS campaign queued for batched processing." : "SMS campaign started.",
     errors: [],
     deliveries: []
   };
+}
 
-  await withSmsCampaignState((state) => {
-    appendRun(state, run);
-  });
+async function processSmsCsvCampaignRows(input: {
+  run: SmsCampaignRunLog;
+  rows: CsvRow[];
+  fileName: string;
+  campaignName: string;
+  template: string;
+  useVariables: boolean;
+  trustImportLeads: boolean;
+  batchSize: number;
+  batchPauseMs: number;
+  optedOutPhones: Set<string>;
+}): Promise<SmsCampaignRunLog> {
+  const {
+    run,
+    rows,
+    fileName,
+    campaignName,
+    template,
+    useVariables,
+    trustImportLeads,
+    batchSize,
+    batchPauseMs,
+    optedOutPhones
+  } = input;
+  const cpsDelayMs = Math.max(0, Math.ceil(1000 / Math.max(0.1, config.twilioCps)));
+  const sentPhones = new Set<string>();
+  const totalBatches = countBatches(rows.length, batchSize);
 
-  try {
-    if (!rows.length) {
-      run.status = "skipped";
-      run.completedAt = nowIso();
-      run.summary = "CSV has no data rows.";
-      return run;
-    }
+  for (let batchIndex = 0; batchIndex < rows.length; batchIndex += batchSize) {
+    const currentBatch = rows.slice(batchIndex, batchIndex + batchSize);
+    const batchNumber = Math.floor(batchIndex / batchSize) + 1;
 
-    const sentPhones = new Set<string>();
-    let throttledSends = 0;
-
-    for (let i = 0; i < rows.length; i += 1) {
-      const sourceRow = i + 2;
-      const lead = buildLeadFromCsvRow(rows[i], fileName, sourceRow, {
-        trustImportLeads: options.trustImportLeads ?? true
+    for (let itemIndex = 0; itemIndex < currentBatch.length; itemIndex += 1) {
+      const sourceIndex = batchIndex + itemIndex;
+      const sourceRow = sourceIndex + 2;
+      const lead = buildLeadFromCsvRow(currentBatch[itemIndex], fileName, sourceRow, {
+        trustImportLeads
       });
+      run.processedCount = sourceIndex + 1;
 
       if (!lead) {
         run.invalidCount += 1;
@@ -819,7 +860,7 @@ export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Prom
       }
 
       sentPhones.add(lead.phone);
-      const message = useVariables ? renderTemplate(template, buildVariableMap(rows[i], campaignName, lead)) : renderTemplateForLead;
+      const message = useVariables ? renderTemplate(template, buildVariableMap(currentBatch[itemIndex], campaignName, lead)) : template;
       if (!message) {
         run.failedCount += 1;
         const err = `Row ${sourceRow}: message empty after template rendering`;
@@ -856,27 +897,171 @@ export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Prom
         });
       }
 
-      throttledSends += 1;
-      if (cpsDelayMs > 0 && throttledSends < rows.length) {
+      if (cpsDelayMs > 0 && run.processedCount < rows.length) {
         await sleep(cpsDelayMs);
       }
     }
 
     run.deliveries = run.deliveries.slice(-MAX_DELIVERY_ROWS);
     run.errors = trimErrors(run.errors);
-    run.status = run.sentCount > 0 ? "completed" : run.failedCount > 0 ? "error" : "skipped";
-    run.completedAt = nowIso();
-    run.summary = `Rows ${run.totalRows}, sent ${run.sentCount}, failed ${run.failedCount}, skipped ${run.skippedCount}, invalid ${run.invalidCount}, blocked ${run.blockedCount}, duplicates ${run.duplicateCount}.`;
-
-    runtimeInfo("twilio", "sms csv campaign completed", {
+    run.summary = `Batch ${batchNumber}/${totalBatches} processed ${run.processedCount || 0}/${rows.length}. Sent ${run.sentCount}, failed ${run.failedCount}, skipped ${run.skippedCount}, invalid ${run.invalidCount}, blocked ${run.blockedCount}, duplicates ${run.duplicateCount}.`;
+    await upsertRunLog(run);
+    runtimeInfo("twilio", "sms csv campaign batch processed", {
       runId: run.id,
-      fileName,
-      campaignName,
-      rows: run.totalRows,
+      batchNumber,
+      totalBatches,
+      processedCount: run.processedCount || 0,
+      totalRows: rows.length,
       sentCount: run.sentCount,
       failedCount: run.failedCount,
       skippedCount: run.skippedCount
     });
+
+    if (batchPauseMs > 0 && batchIndex + batchSize < rows.length) {
+      await sleep(batchPauseMs);
+    }
+  }
+
+  run.deliveries = run.deliveries.slice(-MAX_DELIVERY_ROWS);
+  run.errors = trimErrors(run.errors);
+  run.status = run.sentCount > 0 ? "completed" : run.failedCount > 0 ? "error" : "skipped";
+  run.completedAt = nowIso();
+  run.summary = `Rows ${run.totalRows}, sent ${run.sentCount}, failed ${run.failedCount}, skipped ${run.skippedCount}, invalid ${run.invalidCount}, blocked ${run.blockedCount}, duplicates ${run.duplicateCount}.`;
+  await upsertRunLog(run);
+  return run;
+}
+
+export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Promise<SmsCampaignRunLog> {
+  if (!isTwilioSmsConfigured()) {
+    throw new Error("Twilio SMS is not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)");
+  }
+
+  const csvContent = String(options.csvContent || "");
+  if (!csvContent.trim()) {
+    throw new Error("csvContent is required");
+  }
+
+  const template = String(options.template || defaultSmsCampaignTemplate()).trim();
+  if (!template) {
+    throw new Error("SMS template is required");
+  }
+  const useVariables = options.useVariables !== false;
+  const background = shouldRunSmsCampaignInBackground(0, options.background);
+
+  const rows = parseCsvRows(csvContent);
+  const fileName = safeFileName(options.fileName);
+  const campaignName = (String(options.campaignName || "").trim() || `SMS Campaign ${new Date().toLocaleDateString()}`).slice(0, 120);
+  const existingState = await loadSmsCampaignState();
+  const optedOutPhones = new Set(
+    Object.entries(existingState.replyMarkers || {})
+      .filter(([, marker]) => Boolean(marker?.optedOutAt))
+      .map(([phone]) => normalizeSmsPhone(phone))
+      .filter(Boolean)
+  );
+  const batchSize = normalizeSmsCampaignBatchSize(options.batchSize);
+  const batchPauseMs = normalizeSmsCampaignBatchPauseMs(options.batchPauseMs);
+  const run = createSmsCampaignRun({
+    fileName,
+    campaignName,
+    template,
+    templateMode: useVariables ? "personalized" : "manual",
+    totalRows: rows.length,
+    background: shouldRunSmsCampaignInBackground(rows.length, options.background),
+    batchSize,
+    batchPauseMs
+  });
+
+  await upsertRunLog(run);
+
+  try {
+    if (!rows.length) {
+      run.status = "skipped";
+      run.completedAt = nowIso();
+      run.summary = "CSV has no data rows.";
+      await upsertRunLog(run);
+      return run;
+    }
+
+    if (csvCampaignInFlight) {
+      run.status = "skipped";
+      run.completedAt = nowIso();
+      run.summary = "Another SMS campaign run is already in progress.";
+      await upsertRunLog(run);
+      return run;
+    }
+
+    if (run.background) {
+      csvCampaignInFlight = true;
+      csvCampaignBackgroundRuns.add(run.id);
+      void processSmsCsvCampaignRows({
+        run,
+        rows,
+        fileName,
+        campaignName,
+        template,
+        useVariables,
+        trustImportLeads: options.trustImportLeads ?? true,
+        batchSize,
+        batchPauseMs,
+        optedOutPhones
+      })
+        .catch((error) => {
+          run.status = "error";
+          run.completedAt = nowIso();
+          run.summary = "SMS CSV campaign failed.";
+          run.errors = trimErrors([...run.errors, String(error)]);
+          runtimeError("twilio", "sms csv campaign failed", error, {
+            runId: run.id,
+            fileName,
+            campaignName,
+            background: true
+          });
+          return upsertRunLog(run);
+        })
+        .finally(() => {
+          csvCampaignBackgroundRuns.delete(run.id);
+          csvCampaignInFlight = false;
+        });
+
+      runtimeInfo("twilio", "sms csv campaign queued", {
+        runId: run.id,
+        fileName,
+        campaignName,
+        rows: run.totalRows,
+        batchSize,
+        batchPauseMs,
+        background: true
+      });
+      return run;
+    }
+
+    csvCampaignInFlight = true;
+    try {
+      const finalRun = await processSmsCsvCampaignRows({
+        run,
+        rows,
+        fileName,
+        campaignName,
+        template,
+        useVariables,
+        trustImportLeads: options.trustImportLeads ?? true,
+        batchSize,
+        batchPauseMs,
+        optedOutPhones
+      });
+      runtimeInfo("twilio", "sms csv campaign completed", {
+        runId: finalRun.id,
+        fileName,
+        campaignName,
+        rows: finalRun.totalRows,
+        sentCount: finalRun.sentCount,
+        failedCount: finalRun.failedCount,
+        skippedCount: finalRun.skippedCount
+      });
+      return finalRun;
+    } finally {
+      csvCampaignInFlight = false;
+    }
   } catch (error) {
     run.status = "error";
     run.completedAt = nowIso();
@@ -885,17 +1070,11 @@ export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Prom
     runtimeError("twilio", "sms csv campaign failed", error, {
       runId: run.id,
       fileName,
-      campaignName
+      campaignName,
+      background: run.background
     });
   } finally {
-    await withSmsCampaignState((state) => {
-      const target = state.runs.find((item) => item.id === run.id);
-      if (target) {
-        Object.assign(target, run);
-      } else {
-        appendRun(state, run);
-      }
-    });
+    await upsertRunLog(run);
   }
 
   return run;

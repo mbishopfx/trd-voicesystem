@@ -216,6 +216,9 @@ export const config = {
   smsCampaignDefaultManualTemplate:
     process.env.SMS_CAMPAIGN_DEFAULT_MANUAL_TEMPLATE?.trim() ||
     "hey, i sent you an email earlier and wanted to follow up here too. figured a quick text might be easier if you have a minute.",
+  smsCampaignBatchSize: Math.max(5, Math.min(100, asInt("SMS_CAMPAIGN_BATCH_SIZE", 25))),
+  smsCampaignBatchPauseMs: Math.max(0, Math.min(30_000, asInt("SMS_CAMPAIGN_BATCH_PAUSE_MS", 750))),
+  smsCampaignBackgroundThreshold: Math.max(25, Math.min(2000, asInt("SMS_CAMPAIGN_BACKGROUND_THRESHOLD", 125))),
   smsCampaignReplyTemplate:
     process.env.SMS_CAMPAIGN_REPLY_TEMPLATE?.trim() ||
     "honestly nothing is actually broken, i just noticed [company_name] is basically invisible in google's new ai overviews around [city] while competitors are taking that traffic. usually that points to an authority or entity setup issue. are you handling seo in-house right now or do you have an agency on it?",
