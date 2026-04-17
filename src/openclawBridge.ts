@@ -7,7 +7,7 @@ interface BridgeConfig {
 
 function getBridgeConfig(): BridgeConfig {
   return {
-    url: process.env.OPENCLAW_URL || "http://localhost:3000",
+    url: process.env.OPENCLAW_URL || "http://127.0.0.1:18789/",
     browserApp: process.env.OPENCLAW_BROWSER_APP || "Google Chrome"
   };
 }

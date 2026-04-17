@@ -21,6 +21,6 @@ A local companion for waking the OpenClaw browser tab without the desktop app.
 4. run the always-on loop in capture mode
 
 ## Default environment
-- `OPENCLAW_URL=http://localhost:3000`
+- `OPENCLAW_URL=http://127.0.0.1:18789/`
 - `OPENCLAW_WAKE_WORDS=hey jarvis`
 - `OPENCLAW_BROWSER_APP=Google Chrome`

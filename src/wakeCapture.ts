@@ -23,12 +23,12 @@ function envInt(name: string, fallback: number): number {
 function getConfig(): CaptureConfig {
   return {
     seconds: envInt("OPENCLAW_CAPTURE_SECONDS", 8),
-    wakeWords: (process.env.OPENCLAW_WAKE_WORDS || "jarvis,openclaw,hey jarvis")
+    wakeWords: (process.env.OPENCLAW_WAKE_WORDS || "hey jarvis")
       .split(",")
       .map((word) => word.trim().toLowerCase())
       .filter(Boolean),
     browserApp: process.env.OPENCLAW_BROWSER_APP || "Google Chrome",
-    url: process.env.OPENCLAW_URL || "http://localhost:3000",
+    url: process.env.OPENCLAW_URL || "http://127.0.0.1:18789/",
     whisperModel: process.env.OPENCLAW_WHISPER_MODEL || "base",
     device: process.env.OPENCLAW_MIC_DEVICE || ":0"
   };

@@ -32,7 +32,7 @@ function getConfig(): WakeManagerConfig {
     captureSeconds: envInt("OPENCLAW_CAPTURE_SECONDS", 6),
     pauseSeconds: envInt("OPENCLAW_WAKE_PAUSE_SECONDS", 2),
     browserApp: process.env.OPENCLAW_BROWSER_APP || "Google Chrome",
-    url: process.env.OPENCLAW_URL || "http://localhost:3000",
+    url: process.env.OPENCLAW_URL || "http://127.0.0.1:18789/",
     whisperModel: process.env.OPENCLAW_WHISPER_MODEL || "base",
     micInput: process.env.OPENCLAW_MIC_INPUT || ":0",
     mode: (process.env.OPENCLAW_WAKE_MODE as "capture" | "text") || "capture",
