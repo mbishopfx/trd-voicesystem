@@ -9,6 +9,7 @@ import {
   withDbJsonState
 } from "./stateDb.js";
 import { buildLeadFromCsvRow, parseCsvRows, type CsvRow } from "./ingest.js";
+import { logLeadNoteToGhl } from "./integrations/ghl.js";
 import { isTwilioSmsConfigured, listTwilioMessages, sendSmsMessage } from "./integrations/twilioSms.js";
 import { extractLeadVariables, normalizeVariableKey } from "./leadVariables.js";
 import { normalizePhone } from "./phone.js";
@@ -95,6 +96,8 @@ export interface SmsReplyFollowUpScanResult {
   skippedCount: number;
   optOutCount: number;
   alertCount: number;
+  taggedCount: number;
+  tagFailedCount: number;
   summary: string;
   errors: string[];
 }
@@ -529,55 +532,6 @@ function stripRepeatedIntroduction(message: string, myName: string): string {
   return next.trim() || raw;
 }
 
-function buildContextAwareReply(options: {
-  template: string;
-  rendered: string;
-  myName: string;
-  latestInboundBody: string;
-  company: string;
-  city: string;
-  priorOutboundBody?: string;
-}): { body?: string; skipReason?: string } {
-  const { template, rendered, myName, latestInboundBody, company, city, priorOutboundBody } = options;
-  const intent = detectInboundReplyIntent(latestInboundBody);
-
-  if (intent === "negative") {
-    return { skipReason: "Negative reply; no auto follow-up sent." };
-  }
-
-  const alreadyIntroduced =
-    hasConversationIntroduction(priorOutboundBody || "", myName) || hasConversationIntroduction(rendered, myName);
-  const business = company || "your business";
-  const market = city || "your area";
-
-  if (intent === "identity") {
-    return {
-      body: `${myName} with True Rank Digital. I was looking at ${business} and noticed you're barely showing up in Google's AI overviews around ${market}, while competitors are taking that traffic. Usually that points to an authority or entity setup issue. Are you handling SEO in-house or do you have an agency on it?`
-    };
-  }
-
-  if (intent === "owner_confirm") {
-    return {
-      body: `Perfect. I was looking at ${business} and noticed you're barely showing up in Google's AI overviews around ${market}, while competitors are taking that traffic. Usually that points to an authority or entity setup issue. Are you handling SEO in-house right now or do you have an agency on it?`
-    };
-  }
-
-  if (!rendered) {
-    return { skipReason: "Reply follow-up rendered empty." };
-  }
-
-  const body = alreadyIntroduced ? stripRepeatedIntroduction(rendered, myName) : rendered;
-  if (!body) {
-    return { skipReason: "Reply follow-up empty after cleanup." };
-  }
-
-  if (body === rendered && normalizeReplyText(template) === normalizeReplyText(rendered) && alreadyIntroduced) {
-    return { body: stripRepeatedIntroduction(rendered, myName) };
-  }
-
-  return { body };
-}
-
 function buildJoseReplyAlertBody(options: {
   replies: Array<{
     phone: string;
@@ -604,6 +558,112 @@ function buildJoseReplyAlertBody(options: {
     .join(" | ");
   const footer = `Sent by ${senderName} through the same Twilio number.`;
   return [intro, details, footer].filter(Boolean).join(" ").slice(0, 1400).trim();
+}
+
+function buildSmsReplyLead(phone: string, lead?: Lead): Lead {
+  const normalizedPhone = normalizeSmsPhone(phone) || String(phone || "").trim();
+  const timestamp = nowIso();
+  if (lead) {
+    return {
+      ...lead,
+      phone: normalizedPhone || lead.phone,
+      updatedAt: timestamp
+    };
+  }
+
+  return {
+    id: `sms-reply-${normalizedPhone || Date.now()}`,
+    phone: normalizedPhone || String(phone || "").trim(),
+    timezone: config.defaultTimezone,
+    campaign: config.campaignName,
+    sourceFile: "sms-reply-scan",
+    sourceRow: 0,
+    optIn: true,
+    dnc: false,
+    status: "queued",
+    attempts: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+}
+
+function dedupeTags(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function buildSmsReplyTags(options: {
+  intent: InboundReplyIntent;
+  alertSent: boolean;
+  optOut: boolean;
+  manualReplied: boolean;
+}): string[] {
+  const tags = ["sms-reply-scanned"];
+  if (options.optOut) {
+    tags.push("sms-reply-opt-out", "sms-reply-do-not-contact");
+    return dedupeTags(tags);
+  }
+
+  if (options.manualReplied) {
+    tags.push("sms-reply-manually-handled", "sms-reply-closed");
+    return dedupeTags(tags);
+  }
+
+  tags.push("sms-reply-needs-manual-reply");
+  if (options.alertSent) {
+    tags.push("sms-reply-alerted-jose");
+  }
+
+  if (options.intent === "identity") {
+    tags.push("sms-reply-asked-who-this-is");
+  } else if (options.intent === "owner_confirm") {
+    tags.push("sms-reply-owner-confirmed");
+  } else if (options.intent === "negative") {
+    tags.push("sms-reply-not-interested");
+  } else {
+    tags.push("sms-reply-generic");
+  }
+
+  return dedupeTags(tags);
+}
+
+function buildSmsReplyNote(options: {
+  body: string;
+  intent: InboundReplyIntent;
+  alertSent: boolean;
+  optOut: boolean;
+  manualReplied: boolean;
+  alertName: string;
+}): string {
+  const body = String(options.body || "").trim().replace(/\s+/g, " ").slice(0, 240);
+  if (options.optOut) {
+    return [
+      "SMS reply scan: opt-out detected.",
+      `Intent: ${options.intent}.`,
+      body ? `Reply: ${body}.` : "",
+      "Contact tagged as do not contact in GHL."
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (options.manualReplied) {
+    return [
+      "SMS reply scan: manual reply already sent by the team.",
+      body ? `Inbound reply: ${body}.` : "",
+      "Contact tagged as handled/closed in GHL."
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  return [
+    "SMS reply scan: inbound reply detected.",
+    body ? `Inbound reply: ${body}.` : "",
+    options.alertSent ? `${options.alertName} was alerted for manual follow-up.` : `${options.alertName} alert was not sent.`,
+    `Intent: ${options.intent}.`
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 async function markAlertSent(phone: string, marker: { lastInboundSid?: string; lastAlertSentAt?: string; lastAlertSid?: string }): Promise<void> {
@@ -1110,6 +1170,8 @@ export async function runSmsReplyFollowUpScan(input?: {
       skippedCount: 0,
       optOutCount: 0,
       alertCount: 0,
+      taggedCount: 0,
+      tagFailedCount: 0,
       summary: "Reply scan skipped because another scan is already in progress.",
       errors: []
     };
@@ -1120,7 +1182,7 @@ export async function runSmsReplyFollowUpScan(input?: {
   const template = String(input?.template || defaultSmsCampaignReplyTemplate()).trim();
   if (!template) {
     replyScanInFlight = false;
-    throw new Error("Reply follow-up template is required");
+    throw new Error("Reply scan template is required");
   }
 
   const myName = String(input?.myName || config.smsCampaignDefaultMyName || "Jarvis").trim() || "Jarvis";
@@ -1134,6 +1196,8 @@ export async function runSmsReplyFollowUpScan(input?: {
     skippedCount: 0,
     optOutCount: 0,
     alertCount: 0,
+    taggedCount: 0,
+    tagFailedCount: 0,
     summary: "Reply scan completed.",
     errors: []
   };
@@ -1195,6 +1259,15 @@ export async function runSmsReplyFollowUpScan(input?: {
         optOutReason?: string;
       }
     > = {};
+    const ghlUpdates: Array<{
+      phone: string;
+      lead?: Lead;
+      body: string;
+      intent: InboundReplyIntent;
+      optOut: boolean;
+      manualReplied: boolean;
+      alertCandidate: boolean;
+    }> = [];
     const alertCandidates: Array<{
       phone: string;
       lead?: Lead;
@@ -1212,18 +1285,18 @@ export async function runSmsReplyFollowUpScan(input?: {
       }
 
       const lastMarker = markerByPhone[phone];
-      const alertAlreadySent = Boolean(latestInbound.sid && lastMarker?.lastAlertInboundSid === latestInbound.sid);
       const optOutReason = detectOptOutIntent(latestInbound.body);
-      if (!alertAlreadySent) {
-        alertCandidates.push({
-          phone,
-          lead: leadMap.get(phone),
-          body: latestInbound.body || "",
-          intent: optOutReason ? "negative" : detectInboundReplyIntent(latestInbound.body),
-          sid: latestInbound.sid || ""
-        });
-      }
       if (optOutReason) {
+        const lead = leadMap.get(phone);
+        ghlUpdates.push({
+          phone,
+          lead,
+          body: latestInbound.body || "",
+          intent: "negative",
+          optOut: true,
+          manualReplied: false,
+          alertCandidate: false
+        });
         markerUpdates[phone] = {
           ...(markerUpdates[phone] || lastMarker || {}),
           lastInboundSid: latestInbound.sid || lastMarker?.lastInboundSid,
@@ -1256,6 +1329,17 @@ export async function runSmsReplyFollowUpScan(input?: {
 
       const alreadyReplied = sortedDesc.some((row) => !row.inbound && row.timestampMs > latestInbound.timestampMs);
       if (alreadyReplied) {
+        const lead = leadMap.get(phone);
+        const intent = detectInboundReplyIntent(latestInbound.body);
+        ghlUpdates.push({
+          phone,
+          lead,
+          body: latestInbound.body || "",
+          intent,
+          optOut: false,
+          manualReplied: true,
+          alertCandidate: false
+        });
         markerUpdates[phone] = {
           ...(markerUpdates[phone] || lastMarker || {}),
           lastInboundSid: latestInbound.sid || lastMarker?.lastInboundSid
@@ -1265,52 +1349,33 @@ export async function runSmsReplyFollowUpScan(input?: {
       }
 
       const lead = leadMap.get(phone);
-      const latestPriorOutbound = sortedDesc.find((row) => !row.inbound && row.timestampMs <= latestInbound.timestampMs);
-      const vars = new Map<string, string>();
-      const setVar = (key: string, value: string): void => {
-        const normalizedKey = normalizeVariableKey(key);
-        if (!normalizedKey) return;
-        vars.set(normalizedKey, String(value || "").trim());
-      };
-      setVar("my_name", myName);
-      setVar("first_name", lead?.firstName || "there");
-      setVar("company_name", lead?.company || "your business");
-      setVar("city", lead?.prospectCity || "your area");
-      setVar("inbound_message", latestInbound.body || "");
-      setVar("phone", phone);
-
-      const rendered = renderTemplate(template, vars);
-      const followUp = buildContextAwareReply({
-        template,
-        rendered,
-        myName,
-        latestInboundBody: latestInbound.body || "",
-        company: lead?.company || "your business",
-        city: lead?.prospectCity || "your area",
-        priorOutboundBody: latestPriorOutbound?.body || ""
+      const intent = detectInboundReplyIntent(latestInbound.body);
+      ghlUpdates.push({
+        phone,
+        lead,
+        body: latestInbound.body || "",
+        intent,
+        optOut: false,
+        manualReplied: false,
+        alertCandidate: true
       });
-      if (!followUp.body) {
-        if (followUp.skipReason) {
-          run.errors.push(`Skipped ${phone}: ${followUp.skipReason}`);
-        }
-        run.skippedCount += 1;
-        continue;
-      }
+      alertCandidates.push({
+        phone,
+        lead,
+        body: latestInbound.body || "",
+        intent,
+        sid: latestInbound.sid || ""
+      });
 
-      try {
-        const sent = await sendSmsMessage({ to: phone, body: followUp.body });
-        markerUpdates[phone] = {
-          ...(markerUpdates[phone] || lastMarker || {}),
-          lastInboundSid: latestInbound.sid || lastMarker?.lastInboundSid,
-          lastFollowUpSentAt: nowIso(),
-          lastFollowUpSid: sent.sid
-        };
-        run.sentCount += 1;
-      } catch (error) {
-        run.errors.push(`Failed ${phone}: ${String(error).slice(0, 180)}`);
-      }
+      markerUpdates[phone] = {
+        ...(markerUpdates[phone] || lastMarker || {}),
+        lastInboundSid: latestInbound.sid || lastMarker?.lastInboundSid
+      };
+      run.skippedCount += 1;
+      continue;
     }
 
+    let alertSent = false;
     if (alertCandidates.length > 0) {
       const alertBody = buildJoseReplyAlertBody({
         replies: alertCandidates,
@@ -1320,6 +1385,7 @@ export async function runSmsReplyFollowUpScan(input?: {
       try {
         const sent = await sendSmsMessage({ to: alertPhone, body: alertBody });
         const alertedAt = nowIso();
+        alertSent = true;
         run.alertCount = alertCandidates.length;
         for (const candidate of alertCandidates) {
           markerUpdates[candidate.phone] = {
@@ -1345,6 +1411,44 @@ export async function runSmsReplyFollowUpScan(input?: {
       }
     }
 
+    for (const update of ghlUpdates) {
+      const tags = buildSmsReplyTags({
+        intent: update.intent,
+        alertSent: update.alertCandidate && alertSent,
+        optOut: update.optOut,
+        manualReplied: update.manualReplied
+      });
+      const note = buildSmsReplyNote({
+        body: update.body,
+        intent: update.intent,
+        alertSent: update.alertCandidate && alertSent,
+        optOut: update.optOut,
+        manualReplied: update.manualReplied,
+        alertName
+      });
+      try {
+        const result = await logLeadNoteToGhl({
+          lead: buildSmsReplyLead(update.phone, update.lead),
+          note,
+          tags,
+          upsertIfNeeded: true
+        });
+        if (result.synced) {
+          run.taggedCount += 1;
+        } else {
+          run.tagFailedCount += 1;
+          run.errors.push(`GHL tag update failed for ${normalizeSmsPhone(update.phone) || update.phone}: ${result.error || "unknown error"}`);
+        }
+      } catch (error) {
+        run.tagFailedCount += 1;
+        run.errors.push(`GHL tag update failed for ${normalizeSmsPhone(update.phone) || update.phone}: ${String(error).slice(0, 180)}`);
+        runtimeError("ghl", "sms reply scan tag update failed", error, {
+          phone: normalizeSmsPhone(update.phone) || update.phone,
+          runId: run.id
+        });
+      }
+    }
+
     await withSmsCampaignState((state) => {
       state.replyMarkers = state.replyMarkers && typeof state.replyMarkers === "object" ? state.replyMarkers : {};
       for (const [phone, marker] of Object.entries(markerUpdates)) {
@@ -1356,15 +1460,15 @@ export async function runSmsReplyFollowUpScan(input?: {
     });
 
     run.completedAt = nowIso();
-    run.status = run.sentCount > 0 || run.alertCount > 0 ? "completed" : "skipped";
-    run.summary = `Scanned ${run.scannedThreads} threads, sent ${run.sentCount} follow-ups, alerted ${run.alertCount} thread(s), opted out ${run.optOutCount}, skipped ${run.skippedCount}.`;
+    run.status = run.alertCount > 0 || run.taggedCount > 0 ? "completed" : "skipped";
+    run.summary = `Scanned ${run.scannedThreads} threads, alerted ${run.alertCount} thread(s), tagged ${run.taggedCount} contact(s) in GHL, opted out ${run.optOutCount}, skipped ${run.skippedCount}.`;
     run.errors = trimErrors(run.errors);
     replyScanLastRunAt = run.completedAt;
-    runtimeInfo("twilio", "sms reply follow-up scan completed", {
+    runtimeInfo("twilio", "sms reply scan completed", {
       runId: run.id,
       scannedThreads: run.scannedThreads,
-      sentCount: run.sentCount,
       alertCount: run.alertCount,
+      taggedCount: run.taggedCount,
       skippedCount: run.skippedCount
     });
   } catch (error) {
@@ -1373,7 +1477,7 @@ export async function runSmsReplyFollowUpScan(input?: {
     run.summary = "Reply scan failed.";
     run.errors = trimErrors([...run.errors, String(error)]);
     replyScanLastRunAt = run.completedAt;
-    runtimeError("twilio", "sms reply follow-up scan failed", error, {
+    runtimeError("twilio", "sms reply scan failed", error, {
       runId: run.id
     });
   } finally {

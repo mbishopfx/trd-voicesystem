@@ -1176,7 +1176,7 @@
               <textarea id="smsCampaignTemplate" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">hey [first_name], was just looking at [company_name]'s site and noticed something a little weird... u the owner?</textarea>
             </label>
             <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <label class="text-xs font-bold uppercase tracking-wider text-outline">Reply Follow-Up Name
+              <label class="text-xs font-bold uppercase tracking-wider text-outline">Reply Alert Name
                 <input id="smsCampaignMyName" type="text" value="Jarvis" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
               </label>
               <label class="flex items-center gap-2 pt-6 text-xs font-semibold text-outline">
@@ -1188,13 +1188,13 @@
               <input id="smsCampaignUseVariablesToggle" type="checkbox" checked class="h-4 w-4 rounded border-outline-variant/40" />
               Personalize with lead variables when sending bulk SMS
             </label>
-            <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">Reply Follow-Up Template
+            <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">Reply Scan Template
               <textarea id="smsCampaignReplyTemplate" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">honestly nothing is actually broken, i just noticed [company_name] is basically invisible in google's new ai overviews around [city] while competitors are taking that traffic. usually that points to an authority or entity setup issue. are you handling seo in-house right now or do you have an agency on it?</textarea>
             </label>
-            <p class="mt-2 text-xs text-outline">Manual mode strips placeholders so the same plain copy can go to every lead. Personalization supports both <code>[first_name]</code> and <code>{{firstName}}</code> formats. Opt-out replies like STOP and REMOVE are suppressed and marked do-not-contact. Reply scans also run every 15 minutes in the background and text Jose at <code>+19084163008</code> when new replies show up.</p>
+            <p class="mt-2 text-xs text-outline">Manual mode strips placeholders so the same plain copy can go to every lead. Personalization supports both <code>[first_name]</code> and <code>{{firstName}}</code> formats. Opt-out replies like STOP and REMOVE are suppressed and marked do-not-contact. Reply scans also run every 15 minutes in the background, tag the matching GHL contacts, and text Jose at <code>+19084163008</code> so he can reply manually. No automatic SMS reply is sent.</p>
             <div class="mt-4 flex flex-wrap justify-end gap-2">
               <button id="smsCampaignGenerateTemplateBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Generate Manual Template</button>
-              <button id="smsCampaignScanRepliesBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Scan Replies + Follow Up</button>
+              <button id="smsCampaignScanRepliesBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Scan Replies + Alert Jose</button>
               <button id="smsCampaignRunBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Run SMS Campaign</button>
             </div>
           </section>
