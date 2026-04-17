@@ -11,6 +11,7 @@
     "server": "tsx src/server.ts",
     "wake-listener": "tsx src/wakeListenerCli.ts",
     "wake-capture": "tsx src/wakeCapture.ts",
+    "wake-manager": "tsx src/wakeManagerCli.ts",
     "voice-wake-server": "tsx src/voiceWakeServer.ts",
     "migrate": "tsx src/migrate.ts",
     "check": "tsc --noEmit"
