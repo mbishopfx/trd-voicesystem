@@ -122,6 +122,18 @@ function computeBackoffMs(attempt: number): number {
   return capped * 1000 + randomInt(0, 750);
 }
 
+function isNonRetryableDialerError(error: unknown): boolean {
+  const message = String(error || "").toLowerCase();
+  if (!message) return false;
+  return (
+    message.includes("missing vapi api key") ||
+    message.includes("missing assistantid") ||
+    message.includes("missing phone number config") ||
+    message.includes("missing vapi assistant configuration") ||
+    message.includes("missing vapi phone number or twilio fallback configuration")
+  );
+}
+
 function isEligible(lead: Lead, now: Date, options?: DialOptions): boolean {
   if (!ACTIVE_QUEUE.includes(lead.status)) return false;
   if (lead.attempts >= config.maxAttempts) return false;
@@ -332,18 +344,35 @@ export async function dialOneLead(options?: DialOptions): Promise<{ dispatched: 
       };
     }
 
-    await markFailure(lead.id, String(error), true);
+    const retryable = !isNonRetryableDialerError(error);
+    await markFailure(lead.id, String(error), retryable);
     runtimeError("worker", "Unknown call create failure", error, {
-      leadId: lead.id
+      leadId: lead.id,
+      retryable
     });
-    return { dispatched: true, message: `Lead ${lead.id} failed with unknown error` };
+    return {
+      dispatched: true,
+      message: `Lead ${lead.id} failed with unknown error; retryable=${retryable}`
+    };
   }
 }
 
 export async function dispatchDialerBurst(
   input?: DialOptions & { maxDispatch?: number }
-): Promise<{ requested: number; dispatched: number; idle: number; messages: string[] }> {
+): Promise<{ requested: number; dispatched: number; idle: number; messages: string[]; blocked?: boolean; blockers?: string[] }> {
   const requested = Math.max(1, Math.min(200, Math.trunc(input?.maxDispatch || 25)));
+  const dialerBlockers = getDialerBlockingReasons();
+  if (dialerBlockers.length > 0) {
+    return {
+      requested,
+      dispatched: 0,
+      idle: 1,
+      messages: [`Dialer blocked: ${dialerBlockers.join(" ")}`],
+      blocked: true,
+      blockers: dialerBlockers
+    };
+  }
+
   const messages: string[] = [];
   let dispatched = 0;
   let idle = 0;

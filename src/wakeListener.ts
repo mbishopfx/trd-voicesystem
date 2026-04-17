@@ -12,7 +12,7 @@ interface WakeListenerConfig {
 }
 
 const DEFAULT_URL = process.env.OPENCLAW_URL || "http://localhost:3000";
-const DEFAULT_WAKE_WORDS = (process.env.OPENCLAW_WAKE_WORDS || "jarvis,openclaw,hey jarvis")
+const DEFAULT_WAKE_WORDS = (process.env.OPENCLAW_WAKE_WORDS || "hey jarvis")
   .split(",")
   .map((word) => word.trim().toLowerCase())
   .filter(Boolean);

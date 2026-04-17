@@ -22,6 +22,28 @@ export interface ProspectorReviewQueueItem {
   updatedAt: string;
 }
 
+export interface ProspectorReviewQueueSummary {
+  total: number;
+  readyForCall: number;
+  readyForReview: number;
+  blockedBySiteGeneration: number;
+  blockedByScreenshot: number;
+  blockedByDeploy: number;
+  blockedByScript: number;
+}
+
+export type ProspectorBulkAction = "mark_ready_for_call" | "release_to_queue";
+
+export interface ProspectorBulkActionCandidate {
+  leadId: string;
+  company: string;
+  action: ProspectorBulkAction;
+  priorityScore: number;
+  blockers: string[];
+  handoffStatus: string;
+  updatedAt: string;
+}
+
 function asFiniteScore(value: unknown): number {
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed)) return 0;
@@ -106,6 +128,63 @@ export function buildProspectorReviewQueue(leads: Lead[], limit = 50): Prospecto
     })
     .sort((a, b) => {
       if (a.blockers.length !== b.blockers.length) return a.blockers.length - b.blockers.length;
+      if (a.priorityScore !== b.priorityScore) return b.priorityScore - a.priorityScore;
+      return Date.parse(b.updatedAt || "") - Date.parse(a.updatedAt || "");
+    })
+    .slice(0, Math.max(1, Math.min(500, Math.trunc(limit))));
+}
+
+export function summarizeProspectorReviewQueue(leads: Lead[]): ProspectorReviewQueueSummary {
+  const queue = leads.filter((lead) => lead.sourceFile === "prospector-dashboard");
+  let readyForCall = 0;
+  let readyForReview = 0;
+  let blockedBySiteGeneration = 0;
+  let blockedByScreenshot = 0;
+  let blockedByDeploy = 0;
+  let blockedByScript = 0;
+
+  for (const lead of queue) {
+    if (lead.handoffStatus === "ready_for_call") readyForCall += 1;
+    if (lead.handoffStatus === "ready_for_review") readyForReview += 1;
+    if (!lead.generatedSitePath) blockedBySiteGeneration += 1;
+    if (!lead.generatedScreenshotPath) blockedByScreenshot += 1;
+    if (!lead.deployedSiteUrl) blockedByDeploy += 1;
+    if (!lead.prospectorVoiceScript) blockedByScript += 1;
+  }
+
+  return {
+    total: queue.length,
+    readyForCall,
+    readyForReview,
+    blockedBySiteGeneration,
+    blockedByScreenshot,
+    blockedByDeploy,
+    blockedByScript
+  };
+}
+
+export function listProspectorBulkActionCandidates(
+  leads: Lead[],
+  action: ProspectorBulkAction,
+  limit = 25
+): ProspectorBulkActionCandidate[] {
+  return leads
+    .filter((lead) => lead.sourceFile === "prospector-dashboard")
+    .map((lead) => {
+      const readiness =
+        action === "mark_ready_for_call" ? canMarkProspectReadyForCall(lead) : canReleaseProspectToQueue(lead);
+      return {
+        leadId: lead.id,
+        company: lead.company || lead.id,
+        action,
+        priorityScore: computePriorityScore(lead, readiness.blockers),
+        blockers: readiness.blockers,
+        handoffStatus: lead.handoffStatus || "draft",
+        updatedAt: lead.updatedAt
+      };
+    })
+    .filter((candidate) => candidate.blockers.length === 0)
+    .sort((a, b) => {
       if (a.priorityScore !== b.priorityScore) return b.priorityScore - a.priorityScore;
       return Date.parse(b.updatedAt || "") - Date.parse(a.updatedAt || "");
     })
