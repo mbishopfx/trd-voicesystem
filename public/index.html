@@ -1192,6 +1192,20 @@
               <textarea id="smsCampaignReplyTemplate" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">honestly nothing is actually broken, i just noticed [company_name] is basically invisible in google's new ai overviews around [city] while competitors are taking that traffic. usually that points to an authority or entity setup issue. are you handling seo in-house right now or do you have an agency on it?</textarea>
             </label>
             <p class="mt-2 text-xs text-outline">Manual mode strips placeholders so the same plain copy can go to every lead. Personalization supports both <code>[first_name]</code> and <code>{{firstName}}</code> formats. Opt-out replies like STOP and REMOVE are suppressed and marked do-not-contact. Reply scans also run every 15 minutes in the background, tag the matching GHL contacts, and text Jose at <code>+19084163008</code> so he can reply manually. No automatic SMS reply is sent.</p>
+            <div class="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-outline-variant/20 bg-white/70 p-4 md:grid-cols-3">
+              <div>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-outline">Reply Scanner</p>
+                <p id="smsCampaignScannerStatus" class="mt-1 text-sm font-semibold text-on-surface">Loading...</p>
+              </div>
+              <div>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-outline">Scan Interval</p>
+                <p id="smsCampaignScannerInterval" class="mt-1 text-sm font-semibold text-on-surface">--</p>
+              </div>
+              <div>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-outline">Last Successful Run</p>
+                <p id="smsCampaignScannerLastRun" class="mt-1 text-sm font-semibold text-on-surface">--</p>
+              </div>
+            </div>
             <div class="mt-4 flex flex-wrap justify-end gap-2">
               <button id="smsCampaignGenerateTemplateBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Generate Manual Template</button>
               <button id="smsCampaignScanRepliesBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Scan Replies + Alert Jose</button>
@@ -1901,6 +1915,31 @@
         const myNameInput = document.getElementById("smsCampaignMyName");
         if (myNameInput instanceof HTMLInputElement && !myNameInput.value.trim()) {
           myNameInput.value = String(data.defaultMyName || "Jarvis");
+        }
+
+        const scannerStatus = document.getElementById("smsCampaignScannerStatus");
+        const scannerInterval = document.getElementById("smsCampaignScannerInterval");
+        const scannerLastRun = document.getElementById("smsCampaignScannerLastRun");
+        const scheduler = data.scheduler || {};
+        const enabled = Boolean(scheduler.enabled);
+        const running = Boolean(scheduler.running);
+        const intervalMinutes = Number.isFinite(Number(scheduler.intervalMinutes)) ? Number(scheduler.intervalMinutes) : 15;
+        const lastRunAt = scheduler.lastRunAt ? new Date(scheduler.lastRunAt).toLocaleString() : "--";
+        const statusText = enabled
+          ? running
+            ? `Live - scanning every ${intervalMinutes} minutes`
+            : "Enabled but not running"
+          : "Disabled";
+        if (scannerStatus instanceof HTMLElement) {
+          scannerStatus.textContent = statusText;
+          scannerStatus.className =
+            "mt-1 text-sm font-semibold " + (enabled && running ? "text-emerald-700" : enabled ? "text-amber-700" : "text-slate-500");
+        }
+        if (scannerInterval instanceof HTMLElement) {
+          scannerInterval.textContent = `Every ${intervalMinutes} minutes`;
+        }
+        if (scannerLastRun instanceof HTMLElement) {
+          scannerLastRun.textContent = lastRunAt;
         }
       }
 
