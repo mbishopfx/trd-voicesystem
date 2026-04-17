@@ -10,6 +10,7 @@
     "worker": "tsx src/worker-cli.ts",
     "server": "tsx src/server.ts",
     "wake-listener": "tsx src/wakeListenerCli.ts",
+    "wake-capture": "tsx src/wakeCapture.ts",
     "voice-wake-server": "tsx src/voiceWakeServer.ts",
     "migrate": "tsx src/migrate.ts",
     "check": "tsc --noEmit"
