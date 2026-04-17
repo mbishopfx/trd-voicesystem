@@ -180,7 +180,7 @@ export const config = {
   googleCalendarWebhookSecret: process.env.GOOGLE_CALENDAR_WEBHOOK_SECRET?.trim() || "",
   geminiApiKey: process.env.GEMINI_API_KEY?.trim() || "",
   geminiModel: process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash",
-  geminiProspectorModel: process.env.GEMINI_PROSPECTOR_MODEL?.trim() || "gemini-3.0-flash",
+  geminiProspectorModel: process.env.GEMINI_PROSPECTOR_MODEL?.trim() || "gemini-2.0-flash",
   xaiApiKey: process.env.XAI_API_KEY?.trim() || "",
   xaiBaseUrl: process.env.XAI_BASE_URL?.trim() || "https://api.x.ai/v1",
   xaiModel: process.env.XAI_MODEL?.trim() || "grok-3-mini-beta",
@@ -206,9 +206,16 @@ export const config = {
   prospectorWinSmsTemplate:
     process.env.PROSPECTOR_WIN_SMS_TEMPLATE?.trim() ||
     "Hi {{firstName}}, here is the live vision link: {{liveLink}}. If you want to move forward, book here: {{bookingUrl}}. A team member may reach out before the meeting.",
+  smsReplyScanEnabled: asBool("SMS_REPLY_SCAN_ENABLED", true),
+  smsReplyScanIntervalMinutes: Math.min(60, Math.max(1, asInt("SMS_REPLY_SCAN_INTERVAL_MINUTES", 15))),
+  smsReplyAlertPhone: process.env.SMS_REPLY_ALERT_PHONE?.trim() || "+19084163008",
+  smsReplyAlertName: process.env.SMS_REPLY_ALERT_NAME?.trim() || "Jose",
   smsCampaignDefaultTemplate:
     process.env.SMS_CAMPAIGN_DEFAULT_TEMPLATE?.trim() ||
     "hey [first_name], was just looking at [company_name]'s site and noticed something a little weird... u the owner?",
+  smsCampaignDefaultManualTemplate:
+    process.env.SMS_CAMPAIGN_DEFAULT_MANUAL_TEMPLATE?.trim() ||
+    "hey, i sent you an email earlier and wanted to follow up here too. figured a quick text might be easier if you have a minute.",
   smsCampaignReplyTemplate:
     process.env.SMS_CAMPAIGN_REPLY_TEMPLATE?.trim() ||
     "honestly nothing is actually broken, i just noticed [company_name] is basically invisible in google's new ai overviews around [city] while competitors are taking that traffic. usually that points to an authority or entity setup issue. are you handling seo in-house right now or do you have an agency on it?",

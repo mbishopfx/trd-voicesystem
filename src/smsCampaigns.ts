@@ -28,13 +28,14 @@ export interface SmsCampaignDelivery {
 
 export interface SmsCampaignRunLog {
   id: string;
-  trigger: "manual";
+  trigger: "manual" | "scheduled";
   status: "running" | "completed" | "error" | "skipped";
   startedAt: string;
   completedAt?: string;
   fileName: string;
   campaignName: string;
   templatePreview: string;
+  templateMode?: "personalized" | "manual";
   totalRows: number;
   validRows: number;
   sentCount: number;
@@ -56,6 +57,9 @@ interface SmsCampaignState {
       lastInboundSid?: string;
       lastFollowUpSentAt?: string;
       lastFollowUpSid?: string;
+      lastAlertSentAt?: string;
+      lastAlertSid?: string;
+      lastAlertInboundSid?: string;
       optedOutAt?: string;
       optOutReason?: string;
     }
@@ -70,6 +74,7 @@ export interface RunSmsCsvCampaignOptions {
   campaignName?: string;
   template?: string;
   trustImportLeads?: boolean;
+  useVariables?: boolean;
 }
 
 export interface SmsReplyFollowUpScanResult {
@@ -81,17 +86,32 @@ export interface SmsReplyFollowUpScanResult {
   sentCount: number;
   skippedCount: number;
   optOutCount: number;
+  alertCount: number;
   summary: string;
   errors: string[];
+}
+
+export interface SmsCampaignSchedulerStatus {
+  enabled: boolean;
+  running: boolean;
+  intervalMinutes: number;
+  lastTickAt?: string;
+  lastRunAt?: string;
 }
 
 const STATE_KEY = "sms_campaign_registry";
 const MAX_RUN_LOGS = 120;
 const MAX_DELIVERY_ROWS = 120;
+const DEFAULT_JOSE_ALERT_PHONE = "+19084163008";
+const DEFAULT_REPLY_SCAN_INTERVAL_MINUTES = 15;
 
 let dbFallbackWarned = false;
 let memoryFallbackWarned = false;
 let memoryState: SmsCampaignState | undefined;
+let replyScanTimer: NodeJS.Timeout | undefined;
+let replyScanInFlight = false;
+let replyScanLastTickAt: string | undefined;
+let replyScanLastRunAt: string | undefined;
 
 function createEmptyState(): SmsCampaignState {
   return {
@@ -148,6 +168,66 @@ async function releaseLock(): Promise<void> {
   } catch {
     // no-op
   }
+}
+
+function cleanFreeformText(value: string, limit: number, fallback = ""): string {
+  const source = String(value || "").trim() || fallback;
+  if (!source) return "";
+
+  return source
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1")
+    .replace(/[*_#>`~]/g, " ")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .map((line) => line.replace(/^[-*•]+\s*/, ""))
+    .map((line) => line.replace(/^\d+[.)]\s*/, ""))
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, limit)
+    .trim();
+}
+
+function replaceManualToken(token: string): string {
+  const normalized = normalizeVariableKey(token);
+  if (!normalized) return "";
+
+  if (["firstname", "leadfirstname", "first"].includes(normalized)) return "there";
+  if (["lastname", "leadlastname"].includes(normalized)) return "";
+  if (["company", "companyname", "business", "businessname", "leadcompany"].includes(normalized)) return "your company";
+  if (["city", "location", "area", "market"].includes(normalized)) return "your area";
+  if (["email", "emailaddress"].includes(normalized)) return "your email";
+  if (["myname", "my_name", "brandname", "brand_name"].includes(normalized)) return "we";
+  return "";
+}
+
+export function generateManualSmsTemplate(input: { prompt?: string; fallback?: string; limit?: number }): string {
+  const fallback =
+    input.fallback ||
+    config.smsCampaignDefaultManualTemplate ||
+    "hey, i sent you an email earlier and wanted to follow up here too. figured a quick text might be easier if you have a minute.";
+  const source = cleanFreeformText(input.prompt || "", Math.max(120, Math.trunc(Number(input.limit || 280))), fallback);
+  if (!source) return fallback.slice(0, Math.max(120, Math.trunc(Number(input.limit || 280)))).trim();
+
+  const tokenized = source
+    .replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, token) => replaceManualToken(String(token || "")))
+    .replace(/\[\s*([a-zA-Z0-9_ -]+?)\s*\]/g, (_match, token) => replaceManualToken(String(token || "")));
+
+  const normalized = tokenized
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .replace(/([,.!?;:])([A-Za-z0-9])/g, "$1 $2")
+    .trim();
+
+  if (!normalized) return fallback.slice(0, Math.max(120, Math.trunc(Number(input.limit || 280)))).trim();
+
+  const withOpener = /^(hey|hi|hello|yo|sup|good\s+(morning|afternoon|evening))/i.test(normalized)
+    ? normalized
+    : `hey, ${normalized}`;
+  return withOpener.slice(0, Math.max(120, Math.trunc(Number(input.limit || 280)))).trim();
 }
 
 async function loadSmsCampaignState(): Promise<SmsCampaignState> {
@@ -467,6 +547,46 @@ function buildContextAwareReply(options: {
   return { body };
 }
 
+function buildJoseReplyAlertBody(options: {
+  replies: Array<{
+    phone: string;
+    lead?: Lead;
+    body: string;
+    intent: InboundReplyIntent;
+  }>;
+  senderName: string;
+  alertName: string;
+}): string {
+  const alertName = options.alertName.trim() || "Jose";
+  const senderName = options.senderName.trim() || "Jarvis";
+  const intro = `${alertName}, you have ${options.replies.length} new SMS reply${options.replies.length === 1 ? "" : "s"} from the lead list.`;
+  const details = options.replies
+    .slice(0, 4)
+    .map((reply) => {
+      const leadName = reply.lead?.firstName || reply.lead?.company || reply.phone;
+      const company = reply.lead?.company ? ` / ${reply.lead.company}` : "";
+      const intentLabel =
+        reply.intent === "identity" ? "asked who this is" : reply.intent === "negative" ? "opted out" : reply.intent === "owner_confirm" ? "confirmed owner" : "replied";
+      const snippet = reply.body.replace(/\s+/g, " ").slice(0, 120);
+      return `${leadName}${company} (${intentLabel}): ${snippet}`;
+    })
+    .join(" | ");
+  const footer = `Sent by ${senderName} through the same Twilio number.`;
+  return [intro, details, footer].filter(Boolean).join(" ").slice(0, 1400).trim();
+}
+
+async function markAlertSent(phone: string, marker: { lastInboundSid?: string; lastAlertSentAt?: string; lastAlertSid?: string }): Promise<void> {
+  const normalizedPhone = normalizeSmsPhone(phone);
+  if (!normalizedPhone) return;
+  await withSmsCampaignState((state) => {
+    state.replyMarkers = state.replyMarkers && typeof state.replyMarkers === "object" ? state.replyMarkers : {};
+    state.replyMarkers[normalizedPhone] = {
+      ...(state.replyMarkers[normalizedPhone] || {}),
+      ...marker
+    };
+  });
+}
+
 export async function getSmsOptOutStatus(phone: string): Promise<{ optedOut: boolean; reason?: string; at?: string }> {
   const normalizedPhone = normalizeSmsPhone(phone);
   if (!normalizedPhone) return { optedOut: false };
@@ -541,18 +661,36 @@ export function defaultSmsCampaignReplyTemplate(): string {
   return config.smsCampaignReplyTemplate;
 }
 
+export function defaultSmsCampaignManualTemplate(): string {
+  return config.smsCampaignDefaultManualTemplate;
+}
+
+export function getSmsCampaignSchedulerStatus(): SmsCampaignSchedulerStatus {
+  return {
+    enabled: config.smsReplyScanEnabled,
+    running: Boolean(replyScanTimer),
+    intervalMinutes: config.smsReplyScanIntervalMinutes || DEFAULT_REPLY_SCAN_INTERVAL_MINUTES,
+    lastTickAt: replyScanLastTickAt,
+    lastRunAt: replyScanLastRunAt
+  };
+}
+
 export async function getSmsCampaignDashboard(): Promise<{
   runs: SmsCampaignRunLog[];
   defaultTemplate: string;
   defaultReplyTemplate: string;
   defaultMyName: string;
+  defaultManualTemplate: string;
+  scheduler: SmsCampaignSchedulerStatus;
 }> {
   const state = await loadSmsCampaignState();
   return {
     runs: [...state.runs].slice(-60).reverse(),
     defaultTemplate: defaultSmsCampaignTemplate(),
     defaultReplyTemplate: defaultSmsCampaignReplyTemplate(),
-    defaultMyName: config.smsCampaignDefaultMyName
+    defaultMyName: config.smsCampaignDefaultMyName,
+    defaultManualTemplate: defaultSmsCampaignManualTemplate(),
+    scheduler: getSmsCampaignSchedulerStatus()
   };
 }
 
@@ -570,6 +708,14 @@ export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Prom
   if (!template) {
     throw new Error("SMS template is required");
   }
+  const useVariables = options.useVariables !== false;
+  const renderTemplateForLead = useVariables
+    ? template
+    : generateManualSmsTemplate({
+        prompt: template,
+        fallback: defaultSmsCampaignManualTemplate(),
+        limit: 320
+      });
 
   const rows = parseCsvRows(csvContent);
   const runId = `sms-csv-${Date.now()}`;
@@ -593,6 +739,7 @@ export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Prom
     fileName,
     campaignName,
     templatePreview: template.slice(0, 240),
+    templateMode: useVariables ? "personalized" : "manual",
     totalRows: rows.length,
     validRows: 0,
     sentCount: 0,
@@ -672,11 +819,10 @@ export async function runSmsCsvCampaign(options: RunSmsCsvCampaignOptions): Prom
       }
 
       sentPhones.add(lead.phone);
-      const vars = buildVariableMap(rows[i], campaignName, lead);
-      const message = renderTemplate(template, vars);
+      const message = useVariables ? renderTemplate(template, buildVariableMap(rows[i], campaignName, lead)) : renderTemplateForLead;
       if (!message) {
         run.failedCount += 1;
-        const err = `Row ${sourceRow}: message empty after variable rendering`;
+        const err = `Row ${sourceRow}: message empty after template rendering`;
         run.errors.push(err);
         run.deliveries.push({
           row: sourceRow,
@@ -774,8 +920,27 @@ export async function runSmsReplyFollowUpScan(input?: {
     throw new Error("Twilio SMS is not configured (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)");
   }
 
+  if (replyScanInFlight) {
+    return {
+      id: `sms-reply-scan-${Date.now()}`,
+      status: "skipped",
+      startedAt: nowIso(),
+      completedAt: nowIso(),
+      scannedThreads: 0,
+      sentCount: 0,
+      skippedCount: 0,
+      optOutCount: 0,
+      alertCount: 0,
+      summary: "Reply scan skipped because another scan is already in progress.",
+      errors: []
+    };
+  }
+
+  replyScanInFlight = true;
+
   const template = String(input?.template || defaultSmsCampaignReplyTemplate()).trim();
   if (!template) {
+    replyScanInFlight = false;
     throw new Error("Reply follow-up template is required");
   }
 
@@ -783,12 +948,13 @@ export async function runSmsReplyFollowUpScan(input?: {
   const pageSize = Math.max(20, Math.min(100, Math.trunc(Number(input?.pageSize || 100))));
   const run: SmsReplyFollowUpScanResult = {
     id: `sms-reply-scan-${Date.now()}`,
-    status: "completed",
+    status: "skipped",
     startedAt: nowIso(),
     scannedThreads: 0,
     sentCount: 0,
     skippedCount: 0,
     optOutCount: 0,
+    alertCount: 0,
     summary: "Reply scan completed.",
     errors: []
   };
@@ -802,6 +968,8 @@ export async function runSmsReplyFollowUpScan(input?: {
     const markerByPhone = campaignState.replyMarkers || {};
     const leadMap = leadByPhoneMap(leads);
     const twilioNumber = normalizePhone(config.twilioPhoneNumber || "") || "";
+    const alertPhone = normalizePhone(config.smsReplyAlertPhone || DEFAULT_JOSE_ALERT_PHONE) || DEFAULT_JOSE_ALERT_PHONE;
+    const alertName = config.smsReplyAlertName || "Jose";
 
     const normalized = messages
       .map((row) => {
@@ -832,7 +1000,7 @@ export async function runSmsReplyFollowUpScan(input?: {
       const bucket = threads.get(key) || [];
       bucket.push(row);
       threads.set(key, bucket);
-    }
+      }
 
     run.scannedThreads = threads.size;
     const markerUpdates: Record<
@@ -841,10 +1009,20 @@ export async function runSmsReplyFollowUpScan(input?: {
         lastInboundSid?: string;
         lastFollowUpSentAt?: string;
         lastFollowUpSid?: string;
+        lastAlertSentAt?: string;
+        lastAlertSid?: string;
+        lastAlertInboundSid?: string;
         optedOutAt?: string;
         optOutReason?: string;
       }
     > = {};
+    const alertCandidates: Array<{
+      phone: string;
+      lead?: Lead;
+      body: string;
+      intent: InboundReplyIntent;
+      sid: string;
+    }> = [];
 
     for (const [phone, rows] of threads.entries()) {
       const sortedDesc = rows.slice().sort((a, b) => b.timestampMs - a.timestampMs);
@@ -855,7 +1033,17 @@ export async function runSmsReplyFollowUpScan(input?: {
       }
 
       const lastMarker = markerByPhone[phone];
+      const alertAlreadySent = Boolean(latestInbound.sid && lastMarker?.lastAlertInboundSid === latestInbound.sid);
       const optOutReason = detectOptOutIntent(latestInbound.body);
+      if (!alertAlreadySent) {
+        alertCandidates.push({
+          phone,
+          lead: leadMap.get(phone),
+          body: latestInbound.body || "",
+          intent: optOutReason ? "negative" : detectInboundReplyIntent(latestInbound.body),
+          sid: latestInbound.sid || ""
+        });
+      }
       if (optOutReason) {
         markerUpdates[phone] = {
           ...(markerUpdates[phone] || lastMarker || {}),
@@ -879,6 +1067,10 @@ export async function runSmsReplyFollowUpScan(input?: {
       }
 
       if (latestInbound.sid && lastMarker?.lastInboundSid === latestInbound.sid) {
+        markerUpdates[phone] = {
+          ...(markerUpdates[phone] || lastMarker || {}),
+          lastInboundSid: latestInbound.sid || lastMarker?.lastInboundSid
+        };
         run.skippedCount += 1;
         continue;
       }
@@ -940,6 +1132,40 @@ export async function runSmsReplyFollowUpScan(input?: {
       }
     }
 
+    if (alertCandidates.length > 0) {
+      const alertBody = buildJoseReplyAlertBody({
+        replies: alertCandidates,
+        senderName: myName,
+        alertName
+      });
+      try {
+        const sent = await sendSmsMessage({ to: alertPhone, body: alertBody });
+        const alertedAt = nowIso();
+        run.alertCount = alertCandidates.length;
+        for (const candidate of alertCandidates) {
+          markerUpdates[candidate.phone] = {
+            ...(markerUpdates[candidate.phone] || markerByPhone[candidate.phone] || {}),
+            lastAlertSentAt: alertedAt,
+            lastAlertSid: sent.sid || markerByPhone[candidate.phone]?.lastAlertSid,
+            lastAlertInboundSid: candidate.sid || markerByPhone[candidate.phone]?.lastAlertInboundSid
+          };
+        }
+        runtimeInfo("twilio", "sms reply alert sent", {
+          runId: run.id,
+          alertPhone,
+          alertCount: run.alertCount,
+          sid: sent.sid || ""
+        });
+      } catch (error) {
+        run.errors.push(`Jose alert failed: ${String(error).slice(0, 180)}`);
+        runtimeError("twilio", "sms reply alert failed", error, {
+          runId: run.id,
+          alertPhone,
+          alertCount: alertCandidates.length
+        });
+      }
+    }
+
     await withSmsCampaignState((state) => {
       state.replyMarkers = state.replyMarkers && typeof state.replyMarkers === "object" ? state.replyMarkers : {};
       for (const [phone, marker] of Object.entries(markerUpdates)) {
@@ -951,13 +1177,15 @@ export async function runSmsReplyFollowUpScan(input?: {
     });
 
     run.completedAt = nowIso();
-    run.status = run.sentCount > 0 ? "completed" : "skipped";
-    run.summary = `Scanned ${run.scannedThreads} threads, sent ${run.sentCount}, opted out ${run.optOutCount}, skipped ${run.skippedCount}.`;
+    run.status = run.sentCount > 0 || run.alertCount > 0 ? "completed" : "skipped";
+    run.summary = `Scanned ${run.scannedThreads} threads, sent ${run.sentCount} follow-ups, alerted ${run.alertCount} thread(s), opted out ${run.optOutCount}, skipped ${run.skippedCount}.`;
     run.errors = trimErrors(run.errors);
+    replyScanLastRunAt = run.completedAt;
     runtimeInfo("twilio", "sms reply follow-up scan completed", {
       runId: run.id,
       scannedThreads: run.scannedThreads,
       sentCount: run.sentCount,
+      alertCount: run.alertCount,
       skippedCount: run.skippedCount
     });
   } catch (error) {
@@ -965,10 +1193,63 @@ export async function runSmsReplyFollowUpScan(input?: {
     run.completedAt = nowIso();
     run.summary = "Reply scan failed.";
     run.errors = trimErrors([...run.errors, String(error)]);
+    replyScanLastRunAt = run.completedAt;
     runtimeError("twilio", "sms reply follow-up scan failed", error, {
       runId: run.id
     });
+  } finally {
+    replyScanInFlight = false;
   }
 
   return run;
+}
+
+async function tickSmsReplyScheduler(): Promise<void> {
+  replyScanLastTickAt = nowIso();
+  if (!config.smsReplyScanEnabled) return;
+  const result = await runSmsReplyFollowUpScan({
+    template: defaultSmsCampaignReplyTemplate(),
+    myName: config.smsCampaignDefaultMyName,
+    pageSize: 100
+  });
+  if (result.completedAt) {
+    replyScanLastRunAt = result.completedAt;
+  }
+}
+
+export async function startSmsCampaignScheduler(): Promise<void> {
+  if (replyScanTimer) return;
+  if (!isTwilioSmsConfigured()) {
+    runtimeInfo("scheduler", "sms reply scan scheduler disabled", {
+      reason: "Twilio SMS is not configured",
+      intervalMinutes: config.smsReplyScanIntervalMinutes,
+      alertPhone: normalizePhone(config.smsReplyAlertPhone || DEFAULT_JOSE_ALERT_PHONE) || DEFAULT_JOSE_ALERT_PHONE
+    });
+    return;
+  }
+  if (!config.smsReplyScanEnabled) {
+    runtimeInfo("scheduler", "sms reply scan scheduler disabled", {
+      intervalMinutes: config.smsReplyScanIntervalMinutes,
+      alertPhone: normalizePhone(config.smsReplyAlertPhone || DEFAULT_JOSE_ALERT_PHONE) || DEFAULT_JOSE_ALERT_PHONE
+    });
+    return;
+  }
+
+  const intervalMinutes = Math.max(1, Math.trunc(config.smsReplyScanIntervalMinutes || DEFAULT_REPLY_SCAN_INTERVAL_MINUTES));
+  const intervalMs = intervalMinutes * 60 * 1000;
+  replyScanTimer = setInterval(() => {
+    tickSmsReplyScheduler().catch((error) => {
+      runtimeError("scheduler", "sms reply scan tick failed", error);
+    });
+  }, intervalMs);
+
+  tickSmsReplyScheduler().catch((error) => {
+    runtimeError("scheduler", "sms reply scan initial tick failed", error);
+  });
+
+  runtimeInfo("scheduler", "sms reply scan scheduler loop started", {
+    intervalMs,
+    intervalMinutes,
+    alertPhone: normalizePhone(config.smsReplyAlertPhone || DEFAULT_JOSE_ALERT_PHONE) || DEFAULT_JOSE_ALERT_PHONE
+  });
 }

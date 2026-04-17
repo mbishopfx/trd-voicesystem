@@ -15,13 +15,17 @@ import { fetchSmartListContacts, isGhlConfigured, syncLeadToGhl } from "./integr
 import { listProspectorRuns, startProspectorRun } from "./prospector.js";
 import { generateReadyProspectSites } from "./generation.js";
 import { createProspectScreenshots } from "./screenshots.js";
-import { markProspectReadyForCall } from "./handoff.js";
-import { releaseProspectToQueue } from "./queueRelease.js";
+import { bulkMarkProspectsReadyForCall, markProspectReadyForCall } from "./handoff.js";
+import { bulkReleaseProspectsToQueue, releaseProspectToQueue } from "./queueRelease.js";
 import { getProspectLeadById } from "./prospectTest.js";
 import { createProspectVisionTemplate } from "./prospectTemplate.js";
 import { createTonyDemoTemplate } from "./tonyDemoTemplate.js";
 import { deployGeneratedProspects } from "./deploy.js";
-import { buildProspectorReviewQueue } from "./prospectorReview.js";
+import {
+  buildProspectorReviewQueue,
+  listProspectorBulkActionCandidates,
+  summarizeProspectorReviewQueue
+} from "./prospectorReview.js";
 import {
   importProspectorLeadsToGhl,
   runProspectorPhase2,
@@ -110,7 +114,18 @@ import {
   startProspectorAutoScheduler
 } from "./prospectorAutoScheduler.js";
 import { getVapiCreditGuardStatus } from "./vapiCredits.js";
-import { buildOperationsSnapshot, buildRecommendedActions } from "./runtimeReadiness.js";
+import {
+  buildFeatureRecommendations,
+  buildLeadErrorFingerprints,
+  buildLogFingerprints,
+  buildOptimizationBacklog,
+  buildOperationsSnapshot,
+  buildProspectorQueueAging,
+  buildRecommendedActions,
+  buildRuntimeWatchdog,
+  getBulkSchedulerBlockingReasons,
+  getDialerBlockingReasons
+} from "./runtimeReadiness.js";
 import {
   deleteVoiceProfile,
   getVoicesDashboard,
@@ -125,8 +140,10 @@ import {
   getSmsCampaignDashboard,
   getSmsOptOutStatus,
   isSmsThreadDeleted,
+  generateManualSmsTemplate,
   runSmsCsvCampaign,
-  runSmsReplyFollowUpScan
+  runSmsReplyFollowUpScan,
+  startSmsCampaignScheduler
 } from "./smsCampaigns.js";
 
 type RawBodyRequest = Request & { rawBody?: string };
@@ -1115,6 +1132,173 @@ async function fetchRecentVapiCalls(limit: number): Promise<{
   }
 
   return { ok: false, status: lastStatus, calls: [], error: lastError || "Unable to list Vapi calls" };
+}
+
+type VapiLiveCallBucket = { key: string; count: number };
+
+type VapiLiveCallSummary = {
+  available: boolean;
+  fetched: boolean;
+  status: number;
+  error?: string;
+  totals: {
+    calls: number;
+    ended: number;
+    inProgress: number;
+    booked: number;
+    failed: number;
+    voicemail: number;
+    noAnswer: number;
+  };
+  byStatus: VapiLiveCallBucket[];
+  byOutcome: VapiLiveCallBucket[];
+  recent: Array<{
+    id: string;
+    status: string;
+    outcome: string;
+    startedAt?: string;
+    endedAt?: string;
+    customerNumber?: string;
+    assistantId?: string;
+  }>;
+  opportunities: string[];
+};
+
+function bucketMapToArray(map: Map<string, number>, fallbackKey = "unknown"): VapiLiveCallBucket[] {
+  return [...map.entries()]
+    .map(([key, count]) => ({ key: key || fallbackKey, count }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+}
+
+function getVapiCallStatus(call: Record<string, unknown>): string {
+  const nestedCall = asObject(call.call);
+  return (
+    safeString(call.status) ||
+    safeString(nestedCall?.status) ||
+    safeString(call.state) ||
+    safeString(nestedCall?.state) ||
+    "unknown"
+  )
+    .toLowerCase()
+    .trim();
+}
+
+function getVapiCallOutcome(call: Record<string, unknown>): string {
+  const analysis = asObject(call.analysis);
+  const nestedCall = asObject(call.call);
+  const assistant = asObject(call.assistant);
+  return (
+    safeString(call.outcome) ||
+    safeString(analysis?.outcome) ||
+    safeString(call.endedReason) ||
+    safeString(call.endReason) ||
+    safeString(nestedCall?.endedReason) ||
+    safeString(assistant?.outcome) ||
+    "unknown"
+  )
+    .toLowerCase()
+    .trim();
+}
+
+function isTerminalVapiStatus(status: string): boolean {
+  return ["ended", "completed", "failed", "cancelled", "canceled"].includes(status);
+}
+
+function summarizeRecentVapiCalls(input: {
+  ok: boolean;
+  status: number;
+  calls: Array<Record<string, unknown>>;
+  error?: string;
+}): VapiLiveCallSummary {
+  if (!input.ok) {
+    return {
+      available: false,
+      fetched: false,
+      status: input.status,
+      error: input.error,
+      totals: {
+        calls: 0,
+        ended: 0,
+        inProgress: 0,
+        booked: 0,
+        failed: 0,
+        voicemail: 0,
+        noAnswer: 0
+      },
+      byStatus: [],
+      byOutcome: [],
+      recent: [],
+      opportunities: input.error ? [`Live Vapi analytics unavailable: ${input.error}`] : []
+    };
+  }
+
+  const byStatus = new Map<string, number>();
+  const byOutcome = new Map<string, number>();
+  const totals = {
+    calls: input.calls.length,
+    ended: 0,
+    inProgress: 0,
+    booked: 0,
+    failed: 0,
+    voicemail: 0,
+    noAnswer: 0
+  };
+
+  for (const call of input.calls) {
+    const status = getVapiCallStatus(call);
+    const outcome = getVapiCallOutcome(call);
+    byStatus.set(status, (byStatus.get(status) || 0) + 1);
+    byOutcome.set(outcome, (byOutcome.get(outcome) || 0) + 1);
+
+    if (isTerminalVapiStatus(status)) totals.ended += 1;
+    else totals.inProgress += 1;
+    if (outcome.includes("book")) totals.booked += 1;
+    if (status === "failed" || outcome.includes("fail")) totals.failed += 1;
+    if (outcome.includes("voicemail")) totals.voicemail += 1;
+    if (outcome.includes("no-answer") || outcome.includes("no answer") || outcome.includes("no_answer")) {
+      totals.noAnswer += 1;
+    }
+  }
+
+  const recent = input.calls.slice(0, 10).map((call) => {
+    const status = getVapiCallStatus(call);
+    const outcome = getVapiCallOutcome(call);
+    const customer = asObject(call.customer);
+    return {
+      id: safeString(call.id) || "",
+      status,
+      outcome,
+      startedAt: safeString(call.startedAt),
+      endedAt: safeString(call.endedAt),
+      customerNumber: safeString(customer?.number),
+      assistantId: safeString(call.assistantId)
+    };
+  });
+
+  const opportunities: string[] = [];
+  if (totals.calls === 0) {
+    opportunities.push("No recent Vapi calls were returned, so live call analytics may not be flowing yet.");
+  }
+  if (totals.failed >= 3) {
+    opportunities.push(`Recent Vapi calls show ${totals.failed} failed calls; inspect assistant config and call-create payload compatibility.`);
+  }
+  if (totals.voicemail >= 3) {
+    opportunities.push(`Voicemail outcomes appeared ${totals.voicemail} times; tune opening timing and voicemail detection thresholds.`);
+  }
+  if (totals.noAnswer >= 3) {
+    opportunities.push(`No-answer outcomes appeared ${totals.noAnswer} times; test retry timing and calling-window distribution.`);
+  }
+
+  return {
+    available: true,
+    fetched: true,
+    status: input.status,
+    totals,
+    byStatus: bucketMapToArray(byStatus),
+    byOutcome: bucketMapToArray(byOutcome),
+    recent,
+    opportunities
+  };
 }
 
 async function patchLead(leadId: string, patch: Partial<Lead>): Promise<Lead | undefined> {
@@ -2396,6 +2580,8 @@ export function createServer() {
       voiceProfileId: voiceProfileId || "",
       assistantId: assistantId || "",
       campaignName: campaignName || "",
+      blocked: Boolean(result.blocked),
+      blockers: result.blockers || [],
       dispatched: result.dispatched,
       idle: result.idle
     });
@@ -3083,6 +3269,8 @@ export function createServer() {
     const limit = asOptionalInt(req.query.limit, 1, 500) || 50;
     const leads = await withState((state) => Object.values(state.leads).map((lead) => ({ ...lead })));
     const queue = buildProspectorReviewQueue(leads, limit);
+    const readyForCallCandidates = listProspectorBulkActionCandidates(leads, "mark_ready_for_call", 10);
+    const releaseCandidates = listProspectorBulkActionCandidates(leads, "release_to_queue", 10);
     res.json({
       ok: true,
       count: queue.length,
@@ -3090,6 +3278,10 @@ export function createServer() {
         readyForCall: queue.filter((item) => item.handoffStatus === "ready_for_call" && item.blockers.length === 0).length,
         blockedByAssets: queue.filter((item) => item.blockers.length > 0).length,
         alreadyQueued: queue.filter((item) => item.handoffStatus === "sent_to_queue").length
+      },
+      candidates: {
+        markReadyForCall: readyForCallCandidates,
+        releaseToQueue: releaseCandidates
       },
       queue
     });
@@ -3156,6 +3348,17 @@ export function createServer() {
     res.json({ ok: true, result });
   });
 
+  app.post("/api/prospector/ready-for-call/bulk", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const leadIds = toStringArray(body.leadIds);
+    const limit = asOptionalInt(body.limit, 1, 500) || 25;
+    const result = await bulkMarkProspectsReadyForCall({
+      leadIds,
+      limit
+    });
+    res.json({ ok: true, result });
+  });
+
   app.post("/api/prospector/release-to-queue", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
     const leadId = safeString(body.leadId);
@@ -3168,6 +3371,17 @@ export function createServer() {
       res.status(400).json({ ok: false, error: result.reason || 'Could not release lead' });
       return;
     }
+    res.json({ ok: true, result });
+  });
+
+  app.post("/api/prospector/release-to-queue/bulk", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const leadIds = toStringArray(body.leadIds);
+    const limit = asOptionalInt(body.limit, 1, 500) || 25;
+    const result = await bulkReleaseProspectsToQueue({
+      leadIds,
+      limit
+    });
     res.json({ ok: true, result });
   });
 
@@ -3708,7 +3922,51 @@ export function createServer() {
     const summary = computeAnalyticsSummary(leads);
     const snapshot = buildOperationsSnapshot(leads, logs);
     const actions = buildRecommendedActions(leads, logs);
-    res.json({ ok: true, summary, snapshot, actions });
+    const fingerprints = buildLogFingerprints(logs);
+    const leadErrorFingerprints = buildLeadErrorFingerprints(leads);
+    const featureRecommendations = buildFeatureRecommendations(leads, logs);
+    const optimizationBacklog = buildOptimizationBacklog(leads, logs);
+    const watchdog = buildRuntimeWatchdog(leads, logs);
+    const reviewQueue = buildProspectorReviewQueue(leads, 10);
+    const reviewQueueSummary = summarizeProspectorReviewQueue(leads);
+    const queueAging = buildProspectorQueueAging(leads);
+    const dialerBlockers = getDialerBlockingReasons();
+    const bulkSchedulerBlockers = getBulkSchedulerBlockingReasons();
+    const vapiCreditGuard = await getVapiCreditGuardStatus();
+    const recentVapiCalls = await fetchRecentVapiCalls(100);
+    const vapiLive = summarizeRecentVapiCalls(recentVapiCalls);
+    res.json({
+      ok: true,
+      summary,
+      snapshot,
+      actions,
+      fingerprints,
+      leadErrorFingerprints,
+      featureRecommendations,
+      optimizationBacklog,
+      watchdog,
+      vapiLive,
+      integrations: {
+        dialerBlockers,
+        bulkSchedulerBlockers,
+        vapiCreditGuard
+      },
+      prospector: {
+        queueAging,
+        reviewQueueSummary,
+        reviewQueue
+      }
+    });
+  });
+
+  app.get("/api/vapi/calls/summary", async (req: Request, res: Response) => {
+    const limit = asOptionalInt(req.query.limit, 10, 500) || 100;
+    const recentVapiCalls = await fetchRecentVapiCalls(limit);
+    const summary = summarizeRecentVapiCalls(recentVapiCalls);
+    res.status(recentVapiCalls.ok ? 200 : 503).json({
+      ok: recentVapiCalls.ok,
+      summary
+    });
   });
 
   app.get("/api/analytics/assistants", async (req: Request, res: Response) => {
@@ -4192,6 +4450,21 @@ export function createServer() {
     res.json({ ok: true, ...status });
   });
 
+  app.post("/api/sms/campaign/generate-template", async (req: Request, res: Response) => {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const prompt = safeString(body.prompt) || safeString(body.template) || "";
+    try {
+      const template = generateManualSmsTemplate({
+        prompt,
+        fallback: safeString(body.fallback) || undefined,
+        limit: asOptionalInt(body.limit, 80, 500) || 280
+      });
+      res.json({ ok: true, template, manual: true });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   app.post("/api/sms/campaign/upload-run", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
     const csvContent = typeof body.csvContent === "string" ? body.csvContent : "";
@@ -4206,7 +4479,8 @@ export function createServer() {
         fileName: safeString(body.fileName),
         campaignName: safeString(body.campaignName),
         template: safeString(body.template),
-        trustImportLeads: asOptionalBool(body.trustImportLeads)
+        trustImportLeads: asOptionalBool(body.trustImportLeads),
+        useVariables: asOptionalBool(body.useVariables)
       });
       const status = await getSmsCampaignDashboard();
       res.json({ ok: true, run, status });
@@ -4217,6 +4491,10 @@ export function createServer() {
 
   app.post("/api/sms/campaign/scan-replies", async (req: Request, res: Response) => {
     const body = (req.body || {}) as Record<string, unknown>;
+    if (!isTwilioSmsConfigured()) {
+      res.status(400).json({ ok: false, error: "Twilio SMS is not configured" });
+      return;
+    }
     try {
       const result = await runSmsReplyFollowUpScan({
         template: safeString(body.template),
@@ -5830,6 +6108,9 @@ export function createServer() {
   startReconcileLoop();
   startProspectorAutoScheduler().catch((error) => {
     runtimeError("scheduler", "failed to start prospector auto scheduler", error);
+  });
+  startSmsCampaignScheduler().catch((error) => {
+    runtimeError("scheduler", "failed to start sms campaign scheduler", error);
   });
   return app;
 }

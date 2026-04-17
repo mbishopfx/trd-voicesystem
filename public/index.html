@@ -958,6 +958,11 @@
             </div>
             <div class="space-y-6">
               <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+                <h3 class="font-headline text-lg font-extrabold text-on-surface">Optimization Backlog</h3>
+                <p class="mt-1 text-sm text-outline">A queue of the highest-leverage fixes and features pulled from local state and logs.</p>
+                <div id="analyticsBacklogList" class="mt-4 space-y-3 text-sm"></div>
+              </section>
+              <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
                 <h3 class="font-headline text-lg font-extrabold text-on-surface">Next Feature</h3>
                 <div id="analyticsFeatureList" class="mt-4 space-y-3 text-sm"></div>
               </section>
@@ -965,6 +970,40 @@
                 <h3 class="font-headline text-lg font-extrabold text-on-surface">Log Fingerprints</h3>
                 <div id="analyticsFingerprintList" class="mt-4 space-y-3 text-sm"></div>
               </section>
+            </div>
+          </section>
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 class="font-headline text-lg font-extrabold text-on-surface">Prospector Intervention Board</h3>
+                <p class="mt-1 text-sm text-outline">Work the highest-value review backlog without leaving analytics.</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button id="analyticsBulkReadyBtn" class="rounded-xl border border-teal-300 bg-teal-50 px-3 py-2 text-xs font-bold uppercase tracking-wider text-teal-700">Bulk Mark Ready</button>
+                <button id="analyticsBulkReleaseBtn" class="rounded-xl border border-secondary/35 bg-secondary/15 px-3 py-2 text-xs font-bold uppercase tracking-wider text-secondary">Bulk Release</button>
+              </div>
+            </div>
+            <div id="analyticsInterventionSummary" class="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-6"></div>
+            <div id="analyticsInterventionQueue" class="mt-5 grid grid-cols-1 gap-3 xl:grid-cols-2"></div>
+          </section>
+          <section class="rounded-2xl bg-surface-container-lowest p-6 shadow-sm">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 class="font-headline text-lg font-extrabold text-on-surface">Runtime Watchdog</h3>
+                <p id="analyticsWatchdogSummary" class="mt-1 text-sm text-outline">Scanning runtime drift and repeated failure patterns.</p>
+              </div>
+              <div id="analyticsWatchdogStatus" class="rounded-xl bg-surface-container-low px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-outline">--</div>
+            </div>
+            <div id="analyticsWatchdogSignals" class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5"></div>
+            <div class="mt-5 grid grid-cols-1 gap-6 xl:grid-cols-2">
+              <div>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-outline">Restart Timeline</p>
+                <div id="analyticsWatchdogRestarts" class="mt-3 space-y-2 text-sm"></div>
+              </div>
+              <div>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-outline">Repeated Failures</p>
+                <div id="analyticsWatchdogFailures" class="mt-3 space-y-2 text-sm"></div>
+              </div>
             </div>
           </section>
           <section class="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -1119,7 +1158,7 @@
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <h3 class="font-headline text-xl font-extrabold text-on-surface">SMS Campaigns</h3>
-                <p class="text-sm text-outline">Upload CSVs, map variables automatically, and launch direct SMS outreach only when you press Run.</p>
+                <p class="text-sm text-outline">Upload CSVs, generate a manual bulk message when you want a generic outreach line, and launch SMS only when you press Run.</p>
               </div>
             </div>
             <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -1130,6 +1169,9 @@
                 <input id="smsCampaignName" type="text" value="SMS CSV Campaign" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm" />
               </label>
             </div>
+            <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">Manual Template Prompt
+              <textarea id="smsCampaignManualPrompt" rows="3" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">hey, i sent you an email earlier and wanted to follow up here too. figured a quick text might be easier if you have a minute.</textarea>
+            </label>
             <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">SMS Template
               <textarea id="smsCampaignTemplate" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">hey [first_name], was just looking at [company_name]'s site and noticed something a little weird... u the owner?</textarea>
             </label>
@@ -1139,14 +1181,19 @@
               </label>
               <label class="flex items-center gap-2 pt-6 text-xs font-semibold text-outline">
                 <input id="smsCampaignAutoReplyToggle" type="checkbox" class="h-4 w-4 rounded border-outline-variant/40" />
-                Auto-scan inbound replies and send follow-up
+                Live refresh inbox while open
               </label>
             </div>
+            <label class="mt-4 flex items-center gap-2 text-xs font-semibold text-outline">
+              <input id="smsCampaignUseVariablesToggle" type="checkbox" checked class="h-4 w-4 rounded border-outline-variant/40" />
+              Personalize with lead variables when sending bulk SMS
+            </label>
             <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-outline">Reply Follow-Up Template
               <textarea id="smsCampaignReplyTemplate" rows="4" class="mt-2 w-full rounded-xl border border-outline-variant/30 bg-white px-3 py-2 text-sm">honestly nothing is actually broken, i just noticed [company_name] is basically invisible in google's new ai overviews around [city] while competitors are taking that traffic. usually that points to an authority or entity setup issue. are you handling seo in-house right now or do you have an agency on it?</textarea>
             </label>
-            <p class="mt-2 text-xs text-outline">Variables support both <code>[first_name]</code> and <code>{{firstName}}</code> formats. Common tokens: <code>[first_name]</code>, <code>[company_name]</code>, <code>[city]</code>, <code>[my_name]</code>. Opt-out replies like STOP and REMOVE are suppressed and marked do-not-contact.</p>
+            <p class="mt-2 text-xs text-outline">Manual mode strips placeholders so the same plain copy can go to every lead. Personalization supports both <code>[first_name]</code> and <code>{{firstName}}</code> formats. Opt-out replies like STOP and REMOVE are suppressed and marked do-not-contact. Reply scans also run every 15 minutes in the background and text Jose at <code>+19084163008</code> when new replies show up.</p>
             <div class="mt-4 flex flex-wrap justify-end gap-2">
+              <button id="smsCampaignGenerateTemplateBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Generate Manual Template</button>
               <button id="smsCampaignScanRepliesBtn" class="rounded-xl border border-outline-variant/30 bg-white px-4 py-2 text-xs font-bold uppercase tracking-wider text-on-surface">Scan Replies + Follow Up</button>
               <button id="smsCampaignRunBtn" class="primary-gradient rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-white">Run SMS Campaign</button>
             </div>
@@ -1833,6 +1880,10 @@
         state.smsCampaignStatus = data;
         renderSmsCampaignRuns(data.runs || []);
 
+        const manualPromptInput = document.getElementById("smsCampaignManualPrompt");
+        if (manualPromptInput instanceof HTMLTextAreaElement && !manualPromptInput.value.trim()) {
+          manualPromptInput.value = String(data.defaultManualTemplate || "");
+        }
         const templateInput = document.getElementById("smsCampaignTemplate");
         if (templateInput instanceof HTMLTextAreaElement && !templateInput.value.trim()) {
           templateInput.value = String(data.defaultTemplate || "");
@@ -1845,6 +1896,31 @@
         if (myNameInput instanceof HTMLInputElement && !myNameInput.value.trim()) {
           myNameInput.value = String(data.defaultMyName || "Jarvis");
         }
+      }
+
+      async function generateSmsTemplateFromUi() {
+        const prompt =
+          document.getElementById("smsCampaignManualPrompt") instanceof HTMLTextAreaElement
+            ? document.getElementById("smsCampaignManualPrompt").value.trim()
+            : "";
+        const templateInput = document.getElementById("smsCampaignTemplate");
+        const useVariablesToggle = document.getElementById("smsCampaignUseVariablesToggle");
+        const data = await postJson("/api/sms/campaign/generate-template", {
+          prompt: prompt || undefined,
+          template:
+            templateInput instanceof HTMLTextAreaElement && templateInput.value.trim()
+              ? templateInput.value.trim()
+              : undefined,
+          limit: 280
+        });
+
+        if (templateInput instanceof HTMLTextAreaElement) {
+          templateInput.value = String(data.template || "");
+        }
+        if (useVariablesToggle instanceof HTMLInputElement) {
+          useVariablesToggle.checked = false;
+        }
+        showToast("Manual SMS template generated.");
       }
 
       async function runSmsCsvCampaignFromUi() {
@@ -1861,6 +1937,8 @@
         if (!template) {
           throw new Error("SMS template is required.");
         }
+        const useVariablesToggle = document.getElementById("smsCampaignUseVariablesToggle");
+        const useVariables = useVariablesToggle instanceof HTMLInputElement ? Boolean(useVariablesToggle.checked) : true;
 
         const campaignName = document.getElementById("smsCampaignName")?.value?.trim() || undefined;
         const data = await postJson("/api/sms/campaign/upload-run", {
@@ -1868,7 +1946,8 @@
           csvContent,
           campaignName,
           template,
-          trustImportLeads: true
+          trustImportLeads: true,
+          useVariables
         });
 
         await Promise.all([refreshSmsCampaignStatus(), refreshSmsInbox(true)]);
@@ -1897,8 +1976,6 @@
 
           if (!silent) {
             showToast(data?.result?.summary || "Reply scan complete.");
-          } else if ((data?.result?.sentCount || 0) > 0) {
-            showToast(`Auto follow-up sent to ${data.result.sentCount} replied lead(s).`);
           }
 
           if (data?.status) {
@@ -2452,6 +2529,11 @@
         const actions = opportunitiesResp.actions || [];
         const fingerprints = opportunitiesResp.fingerprints || [];
         const featureRecommendations = opportunitiesResp.featureRecommendations || [];
+        const optimizationBacklog = opportunitiesResp.optimizationBacklog || [];
+        const watchdog = opportunitiesResp.watchdog || {};
+        const prospector = opportunitiesResp.prospector || {};
+        const reviewQueueSummary = prospector.reviewQueueSummary || {};
+        const reviewQueue = prospector.reviewQueue || [];
         const insights = snapshot.insights || [];
         const blockers = snapshot.blockers || [];
         const warnings = snapshot.warnings || [];
@@ -2519,6 +2601,15 @@
             : `<p class="text-outline">No feature recommendation yet.</p>`;
         }
 
+        const backlogList = document.getElementById("analyticsBacklogList");
+        if (backlogList) {
+          backlogList.innerHTML = optimizationBacklog.length
+            ? optimizationBacklog
+                .map((item) => `<div class="rounded-xl border border-outline-variant/20 bg-surface-container-low px-4 py-4"><div class="flex items-center justify-between gap-3"><span class="text-[10px] font-bold uppercase tracking-widest text-outline">${escapeHtml(item.priority || "medium")} priority · ${escapeHtml(item.lane || "operator")}</span><span class="text-[10px] font-bold uppercase tracking-widest text-outline">${escapeHtml(item.owner || "ops")}</span></div><div class="mt-1 font-semibold text-on-surface">${escapeHtml(item.title || "--")}</div><div class="mt-2 text-sm text-outline">${escapeHtml(item.summary || "")}</div><div class="mt-3 text-xs text-outline"><strong>Evidence:</strong> ${escapeHtml(item.evidence || "")}</div><div class="mt-2 text-xs text-outline"><strong>Next step:</strong> ${escapeHtml(item.nextStep || "")}</div></div>`)
+                .join("")
+            : `<p class="text-outline">No optimization backlog yet.</p>`;
+        }
+
         const fingerprintList = document.getElementById("analyticsFingerprintList");
         if (fingerprintList) {
           fingerprintList.innerHTML = fingerprints.length
@@ -2530,6 +2621,96 @@
                 })
                 .join("")
             : `<p class="text-outline">No repeated log patterns found.</p>`;
+        }
+
+        const interventionSummary = document.getElementById("analyticsInterventionSummary");
+        if (interventionSummary) {
+          const cards = [
+            ["Total", reviewQueueSummary.total || 0],
+            ["Ready for Call", reviewQueueSummary.readyForCall || 0],
+            ["Ready for Review", reviewQueueSummary.readyForReview || 0],
+            ["Needs Site", reviewQueueSummary.blockedBySiteGeneration || 0],
+            ["Needs Deploy", reviewQueueSummary.blockedByDeploy || 0],
+            ["Needs Script", reviewQueueSummary.blockedByScript || 0]
+          ];
+          interventionSummary.innerHTML = cards
+            .map(([label, value]) => `<div class="rounded-xl bg-surface-container-low px-3 py-3"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">${escapeHtml(String(label))}</div><div class="mt-1 text-xl font-extrabold text-on-surface">${fmtNum(value)}</div></div>`)
+            .join("");
+        }
+
+        const interventionQueue = document.getElementById("analyticsInterventionQueue");
+        if (interventionQueue) {
+          interventionQueue.innerHTML = reviewQueue.length
+            ? reviewQueue
+                .slice(0, 8)
+                .map((item) => {
+                  const assetState = [
+                    item.hasGeneratedSite ? "site" : "no site",
+                    item.hasScreenshot ? "shot" : "no shot",
+                    item.hasDeploy ? "deploy" : "no deploy",
+                    item.hasVoiceScript ? "script" : "no script"
+                  ].join(" · ");
+                  const blockersLabel = Array.isArray(item.blockers) && item.blockers.length
+                    ? item.blockers.slice(0, 2).join(" • ")
+                    : "No blockers";
+                  const updated = item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "--";
+                  return `<div class="rounded-xl border border-outline-variant/20 bg-surface-container-low px-4 py-4"><div class="flex items-start justify-between gap-3"><div><div class="text-[10px] font-bold uppercase tracking-widest text-outline">${escapeHtml(item.handoffStatus || "draft")} · ${escapeHtml(item.status || "blocked")}</div><div class="mt-1 font-semibold text-on-surface">${escapeHtml(item.company || item.leadId || "--")}</div></div><div class="text-right"><div class="text-[10px] font-bold uppercase tracking-widest text-outline">Priority</div><div class="mt-1 text-lg font-extrabold text-on-surface">${fmtNum(item.priorityScore || 0)}</div></div></div><div class="mt-3 text-xs text-outline"><strong>Next:</strong> ${escapeHtml(item.nextStep || "--")}</div><div class="mt-2 text-xs text-outline"><strong>Assets:</strong> ${escapeHtml(assetState)}</div><div class="mt-2 text-xs text-outline"><strong>Blockers:</strong> ${escapeHtml(blockersLabel)}</div><div class="mt-2 text-xs text-outline">Updated ${escapeHtml(updated)}</div></div>`;
+                })
+                .join("")
+            : `<p class="text-outline">No prospector review queue data available.</p>`;
+        }
+
+        const watchdogStatus = document.getElementById("analyticsWatchdogStatus");
+        if (watchdogStatus) {
+          const status = String(watchdog.status || "unknown").toLowerCase();
+          const tone =
+            status === "critical"
+              ? "bg-rose-50 text-rose-700"
+              : status === "warning"
+              ? "bg-amber-50 text-amber-700"
+              : "bg-teal-50 text-teal-700";
+          watchdogStatus.className = `rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-widest ${tone}`;
+          watchdogStatus.textContent = status;
+        }
+
+        setText("analyticsWatchdogSummary", watchdog.summary || "No watchdog summary available.");
+
+        const watchdogSignals = document.getElementById("analyticsWatchdogSignals");
+        if (watchdogSignals) {
+          const signals = Array.isArray(watchdog.topSignals) ? watchdog.topSignals : [];
+          watchdogSignals.innerHTML = signals.length
+            ? signals
+                .map((item) => {
+                  const tone =
+                    item.tone === "critical"
+                      ? "border-rose-200 bg-rose-50 text-rose-700"
+                      : item.tone === "warning"
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-teal-200 bg-teal-50 text-teal-700";
+                  return `<div class="rounded-xl border ${tone} px-3 py-3"><div class="text-[10px] font-bold uppercase tracking-widest">${escapeHtml(item.label || "--")}</div><div class="mt-1 text-lg font-extrabold">${escapeHtml(String(item.value || "--"))}</div></div>`;
+                })
+                .join("")
+            : `<p class="text-outline">No watchdog signals available.</p>`;
+        }
+
+        const watchdogRestarts = document.getElementById("analyticsWatchdogRestarts");
+        if (watchdogRestarts) {
+          const buckets = Array.isArray(watchdog.restartBuckets) ? watchdog.restartBuckets : [];
+          watchdogRestarts.innerHTML = buckets.length
+            ? buckets
+                .map((item) => `<div class="flex items-center justify-between rounded-xl bg-surface-container-low px-3 py-3"><span class="text-sm text-on-surface">${escapeHtml(item.label || "--")}</span><span class="text-sm font-extrabold text-on-surface">${fmtNum(item.count || 0)}x</span></div>`)
+                .join("")
+            : `<p class="text-outline">No restart events recorded in the retained log file.</p>`;
+        }
+
+        const watchdogFailures = document.getElementById("analyticsWatchdogFailures");
+        if (watchdogFailures) {
+          const failures = Array.isArray(watchdog.failureBuckets) ? watchdog.failureBuckets : [];
+          watchdogFailures.innerHTML = failures.length
+            ? failures
+                .map((item) => `<div class="rounded-xl border border-outline-variant/20 bg-surface-container-low px-4 py-3"><div class="flex items-center justify-between gap-3"><span class="text-sm font-semibold text-on-surface">${escapeHtml(item.title || "--")}</span><span class="text-xs font-extrabold text-on-surface">${fmtNum(item.count || 0)}x</span></div><div class="mt-2 text-xs text-outline">${escapeHtml(item.detail || "")}</div></div>`)
+                .join("")
+            : `<p class="text-outline">No repeated failure buckets found.</p>`;
         }
 
         const rows = document.getElementById("analyticsOutcomeRows");
@@ -3126,6 +3307,49 @@
           }
         });
 
+        async function runAnalyticsProspectorBulkAction(action) {
+          const reviewQueue = await getJson("/api/prospector/review-queue?limit=100");
+          const candidates =
+            action === "ready"
+              ? (reviewQueue.candidates?.markReadyForCall || [])
+              : (reviewQueue.candidates?.releaseToQueue || []);
+          if (!candidates.length) {
+            throw new Error(
+              action === "ready"
+                ? "No prospects are fully prepared to mark ready for call."
+                : "No prospects are fully prepared to release into queue."
+            );
+          }
+
+          const leadIds = candidates.slice(0, 10).map((item) => item.leadId).filter(Boolean);
+          const endpoint =
+            action === "ready" ? "/api/prospector/ready-for-call/bulk" : "/api/prospector/release-to-queue/bulk";
+          const data = await postJson(endpoint, { leadIds, limit: leadIds.length });
+          await Promise.all([refreshAnalytics(), refreshProspectorRuns(), refreshLeads()]);
+          const updated = data.result?.updated || 0;
+          showToast(
+            action === "ready"
+              ? `Marked ${updated} prospect(s) ready for call.`
+              : `Released ${updated} prospect(s) to queue.`
+          );
+        }
+
+        document.getElementById("analyticsBulkReadyBtn").addEventListener("click", async () => {
+          try {
+            await runAnalyticsProspectorBulkAction("ready");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
+        document.getElementById("analyticsBulkReleaseBtn").addEventListener("click", async () => {
+          try {
+            await runAnalyticsProspectorBulkAction("release");
+          } catch (error) {
+            showToast(String(error), true);
+          }
+        });
+
         document.getElementById("schedulerRefreshBtn").addEventListener("click", async () => {
           try {
             await refreshScheduler();
@@ -3423,6 +3647,18 @@
           }
         });
 
+        document.getElementById("smsCampaignGenerateTemplateBtn")?.addEventListener("click", async () => {
+          const btn = document.getElementById("smsCampaignGenerateTemplateBtn");
+          if (btn instanceof HTMLButtonElement) btn.disabled = true;
+          try {
+            await generateSmsTemplateFromUi();
+          } catch (error) {
+            showToast(String(error), true);
+          } finally {
+            if (btn instanceof HTMLButtonElement) btn.disabled = false;
+          }
+        });
+
         document.getElementById("routeHealthRefreshBtn").addEventListener("click", async () => {
           try {
             await refreshRouteHealth();
@@ -3496,13 +3732,11 @@
           if (state.activeTab === "voices") refreshVoices().catch(() => {});
           if (state.activeTab === "prospector") refreshProspectorRuns().catch(() => {});
           if (state.activeTab === "sms-inbox") {
-            refreshSmsInbox(true).catch(() => {});
             refreshSmsCampaignStatus().catch(() => {});
             const autoToggle = document.getElementById("smsCampaignAutoReplyToggle");
             const autoEnabled = autoToggle instanceof HTMLInputElement ? Boolean(autoToggle.checked) : false;
-            const now = Date.now();
-            if (autoEnabled && now - Number(state.smsReplyLastScanAt || 0) >= 60_000) {
-              scanSmsRepliesFromUi(true).catch(() => {});
+            if (autoEnabled) {
+              refreshSmsInbox(true).catch(() => {});
             }
           }
         }, 15000);
